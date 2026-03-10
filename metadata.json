@@ -1,0 +1,9 @@
+{
+  "name": "DDU Social",
+  "description": "A high-performance, Lite PWA for Dire Dawa University students featuring real-time chat, media sharing, and Telegram integration.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
