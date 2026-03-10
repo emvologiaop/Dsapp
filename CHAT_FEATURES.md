@@ -41,7 +41,18 @@ This document describes the advanced chat features implemented in the applicatio
 - Deleted messages are removed from both users' views
 - Only the sender can delete their own messages
 
-### 7. **Enhanced UI/UX** ✨
+### 7. **Image Sharing with Compression** 📷
+- Click the image icon to upload and send photos
+- Automatic image compression before sending:
+  - Maximum width: 800px (height scales proportionally)
+  - JPEG compression at 70% quality
+  - Reduces file size significantly for faster transmission
+- Base64 encoding for seamless integration
+- Images display inline within message bubbles
+- Can reply to messages containing images
+- Images show with rounded corners and proper aspect ratio
+
+### 8. **Enhanced UI/UX** ✨
 - Smooth animations using Framer Motion
 - Message bubbles with rounded corners and gradients
 - User avatars with initials
@@ -50,7 +61,7 @@ This document describes the advanced chat features implemented in the applicatio
 - Improved message input with better placeholder text
 - Disabled send button when input is empty
 
-### 8. **User Avatars** 👤
+### 9. **User Avatars** 👤
 - Gradient avatars with user initials
 - Avatars shown for received messages
 - Avatar grouping (only shows for first message in a sequence)
@@ -71,9 +82,15 @@ This document describes the advanced chat features implemented in the applicatio
 - Optimistic UI updates
 - Framer Motion animations
 - Responsive layout with Tailwind CSS
+- **Image compression using Canvas API:**
+  - FileReader to read uploaded images
+  - Canvas element for resizing (max 800px width)
+  - JPEG compression at 70% quality
+  - Base64 data URL encoding for transmission
 
 ### Database (Message.ts)
 - Extended Message schema with:
+  - `imageUrl`: Optional base64-encoded image data
   - `reactions`: Array of { userId, emoji, createdAt }
   - `replyToId`: Reference to replied message
   - `status`: 'sent' | 'delivered' | 'seen'
@@ -84,12 +101,13 @@ This document describes the advanced chat features implemented in the applicatio
 ## Usage
 
 1. **Send a message**: Type and press Enter or click the send button
-2. **React to a message**: Hover over a message and click the emoji button
-3. **Quick like**: Double-click any message to add a heart
-4. **Reply**: Hover over a message and click the reply button
-5. **Delete**: Hover over your own message and click the trash button
-6. **See typing**: Watch for "typing..." indicator when other user types
-7. **Check status**: Look for check marks next to your sent messages
+2. **Send an image**: Click the image icon (📷) to select and send a photo (automatically compressed)
+3. **React to a message**: Hover over a message and click the emoji button
+4. **Quick like**: Double-click any message to add a heart
+5. **Reply**: Hover over a message and click the reply button
+6. **Delete**: Hover over your own message and click the trash button
+7. **See typing**: Watch for "typing..." indicator when other user types
+8. **Check status**: Look for check marks next to your sent messages
 
 ## Socket Events
 
