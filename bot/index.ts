@@ -1,11 +1,13 @@
 import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
+import { User } from '../src/models/User.js';
 
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
-export function initBot() {
+export function initBot(io?: any) {
   if (!token) {
     console.warn("TELEGRAM_BOT_TOKEN not found. Bot will not start.");
     return null;
@@ -24,8 +26,11 @@ export function initBot() {
 
     if (text && /^\d{6}$/.test(text)) {
       try {
-        // TODO: Find user with this auth code using MongoDB models once defined
-        const user: any = null; // placeholder until MongoDB models are defined
+        const user = await User.findOneAndUpdate(
+          { telegramAuthCode: text },
+          { telegramChatId: chatId.toString() },
+          { new: true }
+        );
         if (user) {
           bot.sendMessage(chatId, `✅ Account linked successfully, ${user.name}! You will now receive DDU Social notifications here.`);
         } else {
@@ -38,8 +43,7 @@ export function initBot() {
     } else if (text?.toLowerCase().includes('reset password')) {
       bot.sendMessage(chatId, "🔐 Password Reset Requested.\n\nPlease provide your registered email address to receive an OTP.");
     } else if (text?.toLowerCase().includes('@')) {
-      // Simulate OTP generation
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otp = crypto.randomInt(100000, 1000000).toString();
       bot.sendMessage(chatId, `🔑 Your DDU Social Password Reset OTP is: ${otp}\n\nUse this code in the web app to reset your password.`);
     } else if (text?.toLowerCase().includes('support')) {
       bot.sendMessage(chatId, "Contact @Dev_Envologia for technical issues.");
