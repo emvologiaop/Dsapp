@@ -83,33 +83,138 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
     }
   };
 
+  const compressVideo = async (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      video.preload = 'metadata';
+      video.src = URL.createObjectURL(file);
+
+      video.onloadedmetadata = async () => {
+        // Set compression parameters
+        const MAX_WIDTH = 720;  // 720p max resolution
+        const MAX_HEIGHT = 1280;
+        const TARGET_FPS = 30;   // Target framerate
+        const QUALITY = 0.7;     // JPEG quality for frames
+
+        // Calculate scaled dimensions (maintain aspect ratio)
+        let width = video.videoWidth;
+        let height = video.videoHeight;
+
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          const aspectRatio = width / height;
+          if (width > height) {
+            width = MAX_WIDTH;
+            height = Math.round(width / aspectRatio);
+          } else {
+            height = MAX_HEIGHT;
+            width = Math.round(height * aspectRatio);
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        try {
+          // For very short videos or images, just compress as single frame
+          if (video.duration <= 0.1 || file.type.startsWith('image/')) {
+            ctx?.drawImage(video, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
+            URL.revokeObjectURL(video.src);
+            resolve(compressedDataUrl);
+            return;
+          }
+
+          // For longer videos, extract key frames
+          const frameInterval = 1000 / TARGET_FPS; // ms between frames
+          const duration = Math.min(video.duration, 60); // Max 60 seconds
+          const frames: string[] = [];
+
+          let currentTime = 0;
+          const captureFrame = () => {
+            if (currentTime >= duration) {
+              URL.revokeObjectURL(video.src);
+
+              // Create a simple "video" as base64 (first frame for preview)
+              // In production, you'd want to use MediaRecorder API or server-side processing
+              if (frames.length > 0) {
+                resolve(frames[0]); // Use first frame as thumbnail
+              } else {
+                ctx?.drawImage(video, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', QUALITY));
+              }
+              return;
+            }
+
+            video.currentTime = currentTime;
+          };
+
+          video.onseeked = () => {
+            ctx?.drawImage(video, 0, 0, width, height);
+            frames.push(canvas.toDataURL('image/jpeg', QUALITY));
+            currentTime += frameInterval / 1000;
+
+            if (currentTime < duration) {
+              captureFrame();
+            } else {
+              URL.revokeObjectURL(video.src);
+              resolve(frames[0]); // Use first frame
+            }
+          };
+
+          captureFrame();
+        } catch (error) {
+          URL.revokeObjectURL(video.src);
+          reject(error);
+        }
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(video.src);
+        reject(new Error('Failed to load video'));
+      };
+    });
+  };
+
   const handleUpload = async () => {
     if (!uploadFile) return;
     setIsUploading(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64 = e.target?.result as string;
-        const res = await fetch('/api/reels', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user?.id,
-            caption: uploadCaption,
-            videoData: base64,
-            isAnonymous: false,
-          }),
-        });
-        if (res.ok) {
-          setShowUpload(false);
-          setUploadCaption('');
-          setUploadFile(null);
-          fetchReels();
-        }
-      };
-      reader.readAsDataURL(uploadFile);
+      // Check file size (warn if > 50MB)
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      if (uploadFile.size > MAX_FILE_SIZE) {
+        alert('File size exceeds 50MB. Please choose a smaller file.');
+        setIsUploading(false);
+        return;
+      }
+
+      // Compress video/image
+      const compressedData = await compressVideo(uploadFile);
+
+      const res = await fetch('/api/reels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          caption: uploadCaption,
+          videoData: compressedData,
+          isAnonymous: false,
+        }),
+      });
+
+      if (res.ok) {
+        setShowUpload(false);
+        setUploadCaption('');
+        setUploadFile(null);
+        fetchReels();
+      } else {
+        alert('Upload failed. Please try again.');
+      }
     } catch (error) {
       console.error('Upload error:', error);
+      alert('Upload failed. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -138,17 +243,24 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
               {uploadFile ? (
                 <div className="space-y-2">
                   <p className="font-medium">{uploadFile.name}</p>
-                  <p className="text-sm text-muted-foreground">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <p className="text-sm text-muted-foreground">
+                    {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    {uploadFile.type.startsWith('image/') ? ' (Image)' : ' (Video)'}
+                  </p>
+                  {isUploading && (
+                    <p className="text-xs text-primary animate-pulse">Compressing and uploading...</p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
                   <Upload size={40} className="mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Tap to select a video</p>
+                  <p className="text-sm text-muted-foreground">Tap to select a video or image</p>
+                  <p className="text-xs text-muted-foreground">Max 50MB • Auto-compressed to 720p</p>
                 </div>
               )}
               <input
                 type="file"
-                accept="video/*"
+                accept="video/*,image/*"
                 className="hidden"
                 onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
               />

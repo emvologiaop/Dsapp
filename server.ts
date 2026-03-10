@@ -72,21 +72,62 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
+// Track online users
+const onlineUsers = new Map<string, string>(); // userId -> socketId
+
 io.on('connection', (socket) => {
   socket.on('join_chat', (userId: string) => {
     socket.join(`user_${userId}`);
+    onlineUsers.set(userId, socket.id);
+    // Broadcast user online status
+    io.emit('user_status', { userId, status: 'online' });
   });
 
-  socket.on('send_private_message', async (data: { senderId: string; receiverId: string; text: string; imageUrl?: string }) => {
+  socket.on('disconnect', () => {
+    // Find and remove user from online users
+    for (const [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        io.emit('user_status', { userId, status: 'offline' });
+        break;
+      }
+    }
+  });
+
+  // Typing indicator
+  socket.on('typing', (data: { senderId: string; receiverId: string; isTyping: boolean }) => {
+    io.to(`user_${data.receiverId}`).emit('user_typing', {
+      userId: data.senderId,
+      isTyping: data.isTyping
+    });
+  });
+
+  socket.on('send_private_message', async (data: { senderId: string; receiverId: string; text: string; imageUrl?: string; replyToId?: string }) => {
     try {
       const message = await Message.create({
         senderId: data.senderId,
         receiverId: data.receiverId,
         text: data.text,
         imageUrl: data.imageUrl,
+        replyToId: data.replyToId,
+        status: 'sent',
       });
-      const populatedMessage = await Message.findById(message._id).lean();
+
+      const populatedMessage = await Message.findById(message._id)
+        .populate('replyToId', 'text senderId')
+        .lean();
+
+      // Send to receiver
       io.to(`user_${data.receiverId}`).emit('receive_private_message', populatedMessage);
+
+      // Send back to sender with delivered status
+      io.to(`user_${data.senderId}`).emit('message_status', {
+        messageId: message._id.toString(),
+        status: 'delivered'
+      });
+
+      // Update status to delivered
+      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
 
       const sender = await User.findById(data.senderId).lean();
       if (sender) {
@@ -100,6 +141,98 @@ io.on('connection', (socket) => {
       }
     } catch (error) {
       console.error('Socket send_private_message error:', error);
+    }
+  });
+
+  // Message read receipt
+  socket.on('message_read', async (data: { messageIds: string[]; userId: string }) => {
+    try {
+      await Message.updateMany(
+        { _id: { $in: data.messageIds }, receiverId: data.userId },
+        { isRead: true, readAt: new Date(), status: 'seen' }
+      );
+
+      // Notify sender(s) about read status
+      const messages = await Message.find({ _id: { $in: data.messageIds } }).lean();
+      messages.forEach(msg => {
+        io.to(`user_${msg.senderId}`).emit('message_status', {
+          messageId: msg._id.toString(),
+          status: 'seen',
+          readAt: new Date()
+        });
+      });
+    } catch (error) {
+      console.error('Socket message_read error:', error);
+    }
+  });
+
+  // Add reaction to message
+  socket.on('add_reaction', async (data: { messageId: string; userId: string; emoji: string }) => {
+    try {
+      const message = await Message.findById(data.messageId);
+      if (!message) return;
+
+      // Remove existing reaction from this user
+      message.reactions = message.reactions.filter(
+        (r: any) => r.userId.toString() !== data.userId
+      );
+
+      // Add new reaction
+      message.reactions.push({
+        userId: data.userId as any,
+        emoji: data.emoji,
+        createdAt: new Date()
+      });
+
+      await message.save();
+
+      const updatedMessage = await Message.findById(data.messageId).lean();
+
+      // Notify both users
+      io.to(`user_${message.senderId}`).emit('message_reaction', updatedMessage);
+      io.to(`user_${message.receiverId}`).emit('message_reaction', updatedMessage);
+    } catch (error) {
+      console.error('Socket add_reaction error:', error);
+    }
+  });
+
+  // Remove reaction from message
+  socket.on('remove_reaction', async (data: { messageId: string; userId: string }) => {
+    try {
+      const message = await Message.findById(data.messageId);
+      if (!message) return;
+
+      message.reactions = message.reactions.filter(
+        (r: any) => r.userId.toString() !== data.userId
+      );
+
+      await message.save();
+
+      const updatedMessage = await Message.findById(data.messageId).lean();
+
+      // Notify both users
+      io.to(`user_${message.senderId}`).emit('message_reaction', updatedMessage);
+      io.to(`user_${message.receiverId}`).emit('message_reaction', updatedMessage);
+    } catch (error) {
+      console.error('Socket remove_reaction error:', error);
+    }
+  });
+
+  // Delete/unsend message
+  socket.on('delete_message', async (data: { messageId: string; userId: string }) => {
+    try {
+      const message = await Message.findById(data.messageId);
+      if (!message || message.senderId.toString() !== data.userId) return;
+
+      message.deletedAt = new Date();
+      message.deletedBy = data.userId as any;
+      await message.save();
+
+      // Notify both users
+      io.to(`user_${message.senderId}`).emit('message_deleted', { messageId: data.messageId });
+      io.to(`user_${message.receiverId}`).emit('message_deleted', { messageId: data.messageId });
+    } catch (error) {
+      console.error('Socket delete_message error:', error);
     }
   });
 });

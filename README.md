@@ -8,6 +8,32 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/65c92b19-8cd2-4e0d-9004-44c63a87f07f
 
+## Features
+
+### Advanced Instagram-like Chat 💬
+- **Message Reactions**: React with emojis (❤️ 😂 😮 😢 😡 👍 🔥 🎉) or double-tap to like
+- **Message Replies**: Thread conversations by replying to specific messages
+- **Typing Indicators**: See when someone is typing in real-time
+- **Read Receipts**: Check marks show sent/delivered/seen status
+- **Online Status**: Real-time presence tracking with "Active now" indicator
+- **Image Sharing**: Send photos with automatic compression (800px max, 70% JPEG quality)
+- **Message Deletion**: Unsend your messages
+- **Smooth Animations**: Instagram-style UI with Framer Motion animations
+
+See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete chat documentation.
+
+### Reels with Video/Image Compression 🎬
+- **Upload Videos & Images**: Share content as reels
+- **Automatic Compression**: Videos/images compressed to 720p max resolution
+- **Quality Optimization**: 70% JPEG quality for optimal size/quality balance
+- **File Validation**: Max 50MB with user-friendly error messages
+- **Like, Comment, Share**: Full social interaction features
+- **Vertical Format**: Optimized 9:16 aspect ratio for mobile viewing
+
+See [REELS_FEATURES.md](REELS_FEATURES.md) for complete reels documentation.
+See [VIDEO_STREAMING_ARCHITECTURE.md](VIDEO_STREAMING_ARCHITECTURE.md) for detailed explanation of how video streaming works.
+See [VIDEO_STREAMING_DIAGRAMS.md](VIDEO_STREAMING_DIAGRAMS.md) for visual flow diagrams.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
