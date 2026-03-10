@@ -31,6 +31,8 @@ See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete chat documentation.
 - **Vertical Format**: Optimized 9:16 aspect ratio for mobile viewing
 
 See [REELS_FEATURES.md](REELS_FEATURES.md) for complete reels documentation.
+See [VIDEO_STREAMING_ARCHITECTURE.md](VIDEO_STREAMING_ARCHITECTURE.md) for detailed explanation of how video streaming works.
+See [VIDEO_STREAMING_DIAGRAMS.md](VIDEO_STREAMING_DIAGRAMS.md) for visual flow diagrams.
 
 ## Run Locally
 
