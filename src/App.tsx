@@ -12,6 +12,7 @@ import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
+import { FeatureIdeas } from './components/FeatureIdeas';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -314,6 +315,11 @@ export default function App() {
                   </button>
                 </div>
               </FriendlyCard>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Roadmap</h3>
+              <FeatureIdeas />
             </div>
 
             <div className="pt-4 space-y-4">
