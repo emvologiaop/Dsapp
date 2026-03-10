@@ -22,14 +22,21 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
+
+const allowedOrigins = process.env.APP_URL
+  ? [process.env.APP_URL]
+  : ['http://localhost:3000', 'http://localhost:5173'];
+
 const io = new SocketIOServer(httpServer, {
-  cors: { origin: '*' },
+  cors: { origin: allowedOrigins },
 });
 
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(cors({ origin: allowedOrigins }));
+app.use(express.json({ limit: '100kb' }));
+// Use higher limit only for upload endpoints
+app.use('/api/reels', express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const limiter = rateLimit({
@@ -43,8 +50,25 @@ app.use(limiter);
 connectDB().catch(console.error);
 initBot(io);
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16).toString('hex');
+    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
+      if (err) reject(err);
+      else resolve(`${salt}:${derivedKey.toString('hex')}`);
+    });
+  });
+}
+
+async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const [salt, hash] = stored.split(':');
+    if (!salt || !hash) return resolve(false);
+    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
+      if (err) reject(err);
+      else resolve(crypto.timingSafeEqual(Buffer.from(hash, 'hex'), derivedKey));
+    });
+  });
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
@@ -92,12 +116,12 @@ app.post('/api/auth/signup', async (req, res) => {
     if (existing) {
       return res.status(409).json({ error: 'Email or username already in use' });
     }
-    const telegramAuthCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
     const user = await User.create({
       name,
       username: username.toLowerCase(),
       email: email.toLowerCase(),
-      password: hashPassword(password),
+      password: await hashPassword(password),
       age: age ? Number(age) : undefined,
       gender,
       department,
@@ -126,7 +150,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user || user.password !== hashPassword(password)) {
+    if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     res.json({
@@ -471,21 +495,30 @@ app.get('/api/users/:userId/chats', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const seen = new Set<string>();
-    const conversations: any[] = [];
+    // Collect last message per unique conversation partner (no N+1)
+    const seen = new Map<string, { text: string; createdAt: Date }>();
     for (const msg of messages) {
       const otherId = msg.senderId.toString() === userId ? msg.receiverId.toString() : msg.senderId.toString();
       if (!seen.has(otherId)) {
-        seen.add(otherId);
-        const otherUser = await User.findById(otherId).select('name username avatarUrl').lean();
-        if (otherUser) {
-          conversations.push({
-            user: { id: otherId, name: otherUser.name, username: otherUser.username, avatarUrl: otherUser.avatarUrl || '' },
-            lastMessage: { text: msg.text, createdAt: msg.createdAt },
-          });
-        }
+        seen.set(otherId, { text: msg.text, createdAt: msg.createdAt });
       }
     }
+
+    const uniqueUserIds = Array.from(seen.keys());
+    const users = await User.find({ _id: { $in: uniqueUserIds } }).select('name username avatarUrl').lean();
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
+
+    const conversations = uniqueUserIds
+      .map((otherId) => {
+        const u = userMap.get(otherId);
+        if (!u) return null;
+        return {
+          user: { id: otherId, name: u.name, username: u.username, avatarUrl: u.avatarUrl || '' },
+          lastMessage: seen.get(otherId),
+        };
+      })
+      .filter(Boolean);
+
     res.json(conversations);
   } catch (error) {
     console.error('GET /api/users/:userId/chats error:', error);

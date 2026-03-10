@@ -22,6 +22,7 @@ const UserSchema = new Schema<IUser>(
     name: { type: String, required: true },
     username: { type: String, required: true, unique: true, lowercase: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    /** Stored as scrypt hash (salt:derivedKey). Never store plaintext passwords. */
     password: { type: String, required: true },
     age: { type: Number },
     gender: { type: String, enum: ['male', 'female', 'other'] },

@@ -1,5 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { User } from '../src/models/User.js';
 
 dotenv.config();
@@ -42,7 +43,7 @@ export function initBot(io?: any) {
     } else if (text?.toLowerCase().includes('reset password')) {
       bot.sendMessage(chatId, "🔐 Password Reset Requested.\n\nPlease provide your registered email address to receive an OTP.");
     } else if (text?.toLowerCase().includes('@')) {
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otp = crypto.randomInt(100000, 1000000).toString();
       bot.sendMessage(chatId, `🔑 Your DDU Social Password Reset OTP is: ${otp}\n\nUse this code in the web app to reset your password.`);
     } else if (text?.toLowerCase().includes('support')) {
       bot.sendMessage(chatId, "Contact @Dev_Envologia for technical issues.");
