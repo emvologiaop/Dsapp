@@ -32,7 +32,7 @@ export default function App() {
   const handleDoubleTapLike = async (postId: string) => {
     try {
       const post = posts.find(p => p._id === postId);
-      if (!post || post.isLiked) return; // Don't double-like
+      if (!post || post.isLiked) return;
 
       setPosts(posts.map(p =>
         p._id === postId ? { ...p, likesCount: p.likesCount + 1, isLiked: true } : p
@@ -200,12 +200,12 @@ export default function App() {
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
-                    onDoubleTap={() => handleDoubleTapLike(post._id)}
+                    onLike={() => handleDoubleTapLike(post._id)}
                   />
                 ) : post.mediaUrl ? (
                   <ImageCarousel
                     images={[post.mediaUrl]}
-                    onDoubleTap={() => handleDoubleTapLike(post._id)}
+                    onLike={() => handleDoubleTapLike(post._id)}
                   />
                 ) : null}
                 <div className="p-4 space-y-2">
