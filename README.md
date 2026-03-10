@@ -20,7 +20,17 @@ View your app in AI Studio: https://ai.studio/apps/65c92b19-8cd2-4e0d-9004-44c63
 - **Message Deletion**: Unsend your messages
 - **Smooth Animations**: Instagram-style UI with Framer Motion animations
 
-See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete documentation.
+See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete chat documentation.
+
+### Reels with Video/Image Compression 🎬
+- **Upload Videos & Images**: Share content as reels
+- **Automatic Compression**: Videos/images compressed to 720p max resolution
+- **Quality Optimization**: 70% JPEG quality for optimal size/quality balance
+- **File Validation**: Max 50MB with user-friendly error messages
+- **Like, Comment, Share**: Full social interaction features
+- **Vertical Format**: Optimized 9:16 aspect ratio for mobile viewing
+
+See [REELS_FEATURES.md](REELS_FEATURES.md) for complete reels documentation.
 
 ## Run Locally
 
