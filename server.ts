@@ -4,92 +4,252 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import crypto from 'crypto';
 import { connectDB } from './src/db.js';
 import { initBot } from './bot/index.js';
+import { User } from './src/models/User.js';
+import { Post } from './src/models/Post.js';
+import { Message } from './src/models/Message.js';
+import { Notification } from './src/models/Notification.js';
+import { Share } from './src/models/Share.js';
+import { Comment } from './src/models/Comment.js';
+import { Reel } from './src/models/Reel.js';
 
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: '*' },
+});
+
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// Rate limiter for all routes
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use(limiter);
 
-// Connect to MongoDB
 connectDB().catch(console.error);
+initBot(io);
 
-// Initialize Telegram bot
-initBot();
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
-// ── API Routes ────────────────────────────────────────────────────────────────
+// ── Socket.IO ─────────────────────────────────────────────────────────────────
+io.on('connection', (socket) => {
+  socket.on('join_chat', (userId: string) => {
+    socket.join(`user_${userId}`);
+  });
 
-// GET /api/posts — fetch posts (optionally filtered by userId)
+  socket.on('send_private_message', async (data: { senderId: string; receiverId: string; text: string; imageUrl?: string }) => {
+    try {
+      const message = await Message.create({
+        senderId: data.senderId,
+        receiverId: data.receiverId,
+        text: data.text,
+        imageUrl: data.imageUrl,
+      });
+      const populatedMessage = await Message.findById(message._id).lean();
+      io.to(`user_${data.receiverId}`).emit('receive_private_message', populatedMessage);
+
+      const sender = await User.findById(data.senderId).lean();
+      if (sender) {
+        const notification = await Notification.create({
+          userId: data.receiverId,
+          type: 'message',
+          content: `${sender.name} sent you a message`,
+          relatedUserId: data.senderId,
+        });
+        io.to(`user_${data.receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+      }
+    } catch (error) {
+      console.error('Socket send_private_message error:', error);
+    }
+  });
+});
+
+// ── Auth Routes ────────────────────────────────────────────────────────────────
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { name, username, email, password, age, gender, department } = req.body;
+    if (!name || !username || !email || !password) {
+      return res.status(400).json({ error: 'Name, username, email and password are required' });
+    }
+    const existing = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+    if (existing) {
+      return res.status(409).json({ error: 'Email or username already in use' });
+    }
+    const telegramAuthCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const user = await User.create({
+      name,
+      username: username.toLowerCase(),
+      email: email.toLowerCase(),
+      password: hashPassword(password),
+      age: age ? Number(age) : undefined,
+      gender,
+      department,
+      telegramAuthCode,
+    });
+    res.status(201).json({
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        department: user.department,
+        telegramAuthCode: user.telegramAuthCode,
+      },
+    });
+  } catch (error) {
+    console.error('POST /api/auth/signup error:', error);
+    res.status(500).json({ error: 'Signup failed' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user || user.password !== hashPassword(password)) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    res.json({
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        department: user.department,
+        telegramAuthCode: user.telegramAuthCode,
+      },
+    });
+  } catch (error) {
+    console.error('POST /api/auth/login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+app.get('/api/auth/verify-telegram/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const user = await User.findOne({ telegramAuthCode: code });
+    res.json({ verified: !!(user && user.telegramChatId) });
+  } catch (error) {
+    console.error('GET /api/auth/verify-telegram error:', error);
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// ── Post Routes ────────────────────────────────────────────────────────────────
+
 app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    // TODO: query MongoDB for posts
-    res.json([]);
+    const posts = await Post.find()
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    let followingSet = new Set<string>();
+    if (userId) {
+      const currentUser = await User.findById(userId).lean();
+      if (currentUser) {
+        followingSet = new Set(currentUser.followingIds.map((id) => id.toString()));
+      }
+    }
+
+    const enriched = posts.map((post: any) => ({
+      ...post,
+      likesCount: post.likedBy.length,
+      isLiked: userId ? post.likedBy.some((id: any) => id.toString() === userId.toString()) : false,
+      isBookmarked: userId ? post.bookmarkedBy.some((id: any) => id.toString() === userId.toString()) : false,
+      isFollowing: post.userId ? followingSet.has(post.userId._id.toString()) : false,
+    }));
+
+    res.json(enriched);
   } catch (error) {
     console.error('GET /api/posts error:', error);
     res.status(500).json({ error: 'Failed to fetch posts' });
   }
 });
 
-// POST /api/posts — create a new post
 app.post('/api/posts', async (req, res) => {
   try {
-    const post = req.body;
-    // TODO: save post to MongoDB
-    res.status(201).json({ ...post, _id: Date.now().toString() });
+    const { userId, content, isAnonymous, mediaUrl } = req.body;
+    if (!userId || !content) {
+      return res.status(400).json({ error: 'userId and content are required' });
+    }
+    const post = await Post.create({ userId, content, isAnonymous: Boolean(isAnonymous), mediaUrl });
+    const populated = await Post.findById(post._id).populate('userId', 'name username avatarUrl').lean();
+    res.status(201).json(populated);
   } catch (error) {
     console.error('POST /api/posts error:', error);
     res.status(500).json({ error: 'Failed to create post' });
   }
 });
 
-// POST /api/posts/:postId/like — like a post
 app.post('/api/posts/:postId/like', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    // TODO: add like in MongoDB
-    res.json({ postId, userId, liked: true });
+    const post = await Post.findByIdAndUpdate(postId, { $addToSet: { likedBy: userId } }, { new: true }).populate('userId', 'name');
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    if (!post.isAnonymous && post.userId && (post.userId as any)._id.toString() !== userId) {
+      const liker = await User.findById(userId).lean();
+      if (liker) {
+        const notification = await Notification.create({
+          userId: (post.userId as any)._id,
+          type: 'like',
+          content: `${liker.name} liked your post`,
+          relatedUserId: userId,
+          relatedPostId: postId,
+        });
+        io.to(`user_${(post.userId as any)._id.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+      }
+    }
+    res.json({ postId, userId, liked: true, likesCount: post.likedBy.length });
   } catch (error) {
     console.error('POST /api/posts/:postId/like error:', error);
     res.status(500).json({ error: 'Failed to like post' });
   }
 });
 
-// DELETE /api/posts/:postId/like — unlike a post
 app.delete('/api/posts/:postId/like', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    // TODO: remove like in MongoDB
-    res.json({ postId, userId, liked: false });
+    const post = await Post.findByIdAndUpdate(postId, { $pull: { likedBy: userId } }, { new: true });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+    res.json({ postId, userId, liked: false, likesCount: post.likedBy.length });
   } catch (error) {
     console.error('DELETE /api/posts/:postId/like error:', error);
     res.status(500).json({ error: 'Failed to unlike post' });
   }
 });
 
-// POST /api/posts/:postId/bookmark — bookmark a post
 app.post('/api/posts/:postId/bookmark', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    // TODO: add bookmark in MongoDB
+    await Post.findByIdAndUpdate(postId, { $addToSet: { bookmarkedBy: userId } });
     res.json({ postId, userId, bookmarked: true });
   } catch (error) {
     console.error('POST /api/posts/:postId/bookmark error:', error);
@@ -97,12 +257,11 @@ app.post('/api/posts/:postId/bookmark', async (req, res) => {
   }
 });
 
-// DELETE /api/posts/:postId/bookmark — remove bookmark
 app.delete('/api/posts/:postId/bookmark', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    // TODO: remove bookmark in MongoDB
+    await Post.findByIdAndUpdate(postId, { $pull: { bookmarkedBy: userId } });
     res.json({ postId, userId, bookmarked: false });
   } catch (error) {
     console.error('DELETE /api/posts/:postId/bookmark error:', error);
@@ -110,12 +269,30 @@ app.delete('/api/posts/:postId/bookmark', async (req, res) => {
   }
 });
 
-// POST /api/posts/:postId/share — share a post with mutual followers
 app.post('/api/posts/:postId/share', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId, receiverIds } = req.body;
-    // TODO: record share and notify recipients in MongoDB
+    if (!Array.isArray(receiverIds) || receiverIds.length === 0) {
+      return res.status(400).json({ error: 'receiverIds is required' });
+    }
+    const sender = await User.findById(userId).lean();
+    if (!sender) return res.status(404).json({ error: 'User not found' });
+
+    const shares = receiverIds.map((receiverId: string) => ({ postId, senderId: userId, receiverId }));
+    await Share.insertMany(shares);
+    await Post.findByIdAndUpdate(postId, { $inc: { sharesCount: receiverIds.length } });
+
+    for (const receiverId of receiverIds) {
+      const notification = await Notification.create({
+        userId: receiverId,
+        type: 'share',
+        content: `${sender.name} shared a post with you`,
+        relatedUserId: userId,
+        relatedPostId: postId,
+      });
+      io.to(`user_${receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+    }
     res.json({ postId, userId, receiverIds, shared: true });
   } catch (error) {
     console.error('POST /api/posts/:postId/share error:', error);
@@ -123,12 +300,73 @@ app.post('/api/posts/:postId/share', async (req, res) => {
   }
 });
 
-// POST /api/users/:targetId/follow — follow a user
+app.get('/api/posts/:postId/comments', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const comments = await Comment.find({ postId })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+    res.json(comments);
+  } catch (error) {
+    console.error('GET /api/posts/:postId/comments error:', error);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+app.post('/api/posts/:postId/comments', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, content, isAnonymous } = req.body;
+    if (!userId || !content) {
+      return res.status(400).json({ error: 'userId and content are required' });
+    }
+    const comment = await Comment.create({ postId, userId, content, isAnonymous: Boolean(isAnonymous) });
+    await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
+    const populated = await Comment.findById(comment._id).populate('userId', 'name username avatarUrl').lean();
+
+    const post = await Post.findById(postId).lean();
+    if (post && !post.isAnonymous && post.userId.toString() !== userId) {
+      const commenter = await User.findById(userId).lean();
+      if (commenter) {
+        const notification = await Notification.create({
+          userId: post.userId,
+          type: 'comment',
+          content: `${commenter.name} commented on your post`,
+          relatedUserId: userId,
+          relatedPostId: postId,
+        });
+        io.to(`user_${post.userId.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+      }
+    }
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/posts/:postId/comments error:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ── User Routes ────────────────────────────────────────────────────────────────
+
 app.post('/api/users/:targetId/follow', async (req, res) => {
   try {
     const { targetId } = req.params;
     const { userId } = req.body;
-    // TODO: add follow relationship in MongoDB
+    if (userId === targetId) return res.status(400).json({ error: 'Cannot follow yourself' });
+
+    await User.findByIdAndUpdate(userId, { $addToSet: { followingIds: targetId } });
+    await User.findByIdAndUpdate(targetId, { $addToSet: { followerIds: userId } });
+
+    const follower = await User.findById(userId).lean();
+    if (follower) {
+      const notification = await Notification.create({
+        userId: targetId,
+        type: 'follow',
+        content: `${follower.name} started following you`,
+        relatedUserId: userId,
+      });
+      io.to(`user_${targetId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+    }
     res.json({ userId, targetId, following: true });
   } catch (error) {
     console.error('POST /api/users/:targetId/follow error:', error);
@@ -136,12 +374,12 @@ app.post('/api/users/:targetId/follow', async (req, res) => {
   }
 });
 
-// DELETE /api/users/:targetId/follow — unfollow a user
 app.delete('/api/users/:targetId/follow', async (req, res) => {
   try {
     const { targetId } = req.params;
     const { userId } = req.body;
-    // TODO: remove follow relationship in MongoDB
+    await User.findByIdAndUpdate(userId, { $pull: { followingIds: targetId } });
+    await User.findByIdAndUpdate(targetId, { $pull: { followerIds: userId } });
     res.json({ userId, targetId, following: false });
   } catch (error) {
     console.error('DELETE /api/users/:targetId/follow error:', error);
@@ -149,26 +387,234 @@ app.delete('/api/users/:targetId/follow', async (req, res) => {
   }
 });
 
-// GET /api/users/:userId/mutuals — get mutual followers
 app.get('/api/users/:userId/mutuals', async (req, res) => {
   try {
     const { userId } = req.params;
-    // TODO: query MongoDB for mutual followers
-    res.json([]);
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const followingSet = new Set(user.followingIds.map((id) => id.toString()));
+    const mutualIds = user.followerIds.filter((id) => followingSet.has(id.toString()));
+    const mutuals = await User.find({ _id: { $in: mutualIds } }).select('name username avatarUrl').lean();
+
+    res.json(mutuals.map((u) => ({ id: u._id.toString(), name: u.name, username: u.username, avatarUrl: u.avatarUrl || '' })));
   } catch (error) {
     console.error('GET /api/users/:userId/mutuals error:', error);
     res.status(500).json({ error: 'Failed to fetch mutuals' });
   }
 });
 
-// POST /api/telegram/webhook — Telegram bot webhook
+app.get('/api/users/:userId/inbox', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const shares = await Share.find({ receiverId: userId })
+      .sort({ createdAt: -1 })
+      .populate('senderId', 'name username avatarUrl')
+      .populate({ path: 'postId', populate: { path: 'userId', select: 'name username avatarUrl' } })
+      .lean();
+
+    const result = shares.map((share: any) => ({
+      shareId: share._id.toString(),
+      sender: {
+        id: share.senderId._id.toString(),
+        name: share.senderId.name,
+        username: share.senderId.username,
+        avatarUrl: share.senderId.avatarUrl || '',
+      },
+      post: {
+        ...share.postId,
+        likesCount: share.postId.likedBy?.length || 0,
+        commentsCount: share.postId.commentsCount || 0,
+        sharesCount: share.postId.sharesCount || 0,
+        isLiked: share.postId.likedBy?.some((id: any) => id.toString() === userId) || false,
+        isBookmarked: share.postId.bookmarkedBy?.some((id: any) => id.toString() === userId) || false,
+      },
+    }));
+    res.json(result);
+  } catch (error) {
+    console.error('GET /api/users/:userId/inbox error:', error);
+    res.status(500).json({ error: 'Failed to fetch inbox' });
+  }
+});
+
+app.get('/api/users/:userId/profile', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { currentUserId } = req.query;
+    const user = await User.findById(userId).lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isFollowing = currentUserId
+      ? user.followerIds.some((id) => id.toString() === currentUserId.toString())
+      : false;
+
+    res.json({
+      id: user._id.toString(),
+      name: user.name,
+      username: user.username,
+      avatarUrl: user.avatarUrl || '',
+      department: user.department || '',
+      followersCount: user.followerIds.length,
+      followingCount: user.followingIds.length,
+      isFollowing,
+    });
+  } catch (error) {
+    console.error('GET /api/users/:userId/profile error:', error);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.get('/api/users/:userId/chats', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const messages = await Message.find({ $or: [{ senderId: userId }, { receiverId: userId }] })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const seen = new Set<string>();
+    const conversations: any[] = [];
+    for (const msg of messages) {
+      const otherId = msg.senderId.toString() === userId ? msg.receiverId.toString() : msg.senderId.toString();
+      if (!seen.has(otherId)) {
+        seen.add(otherId);
+        const otherUser = await User.findById(otherId).select('name username avatarUrl').lean();
+        if (otherUser) {
+          conversations.push({
+            user: { id: otherId, name: otherUser.name, username: otherUser.username, avatarUrl: otherUser.avatarUrl || '' },
+            lastMessage: { text: msg.text, createdAt: msg.createdAt },
+          });
+        }
+      }
+    }
+    res.json(conversations);
+  } catch (error) {
+    console.error('GET /api/users/:userId/chats error:', error);
+    res.status(500).json({ error: 'Failed to fetch chats' });
+  }
+});
+
+// ── Message Routes ─────────────────────────────────────────────────────────────
+
+app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
+  try {
+    const { userId, otherUserId } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { senderId: userId, receiverId: otherUserId },
+        { senderId: otherUserId, receiverId: userId },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+    res.json(messages);
+  } catch (error) {
+    console.error('GET /api/messages error:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// ── Notification Routes ────────────────────────────────────────────────────────
+
+app.get('/api/notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const notifications = await Notification.find({ userId }).sort({ createdAt: -1 }).limit(50).lean();
+    res.json(notifications.map((n) => ({ ...n, id: n._id.toString() })));
+  } catch (error) {
+    console.error('GET /api/notifications error:', error);
+    res.status(500).json({ error: 'Failed to fetch notifications' });
+  }
+});
+
+app.post('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Notification.findByIdAndUpdate(id, { isRead: true });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('POST /api/notifications/:id/read error:', error);
+    res.status(500).json({ error: 'Failed to mark as read' });
+  }
+});
+
+// ── Telegram Webhook ───────────────────────────────────────────────────────────
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
-    // TODO: handle incoming Telegram webhook updates
     res.json({ ok: true });
   } catch (error) {
     console.error('POST /api/telegram/webhook error:', error);
     res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// ── Reels Routes ───────────────────────────────────────────────────────────────
+
+app.get('/api/reels', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const reels = await Reel.find()
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    const enriched = reels.map((reel: any) => ({
+      ...reel,
+      likesCount: reel.likedBy.length,
+      isLiked: userId ? reel.likedBy.some((id: any) => id.toString() === userId.toString()) : false,
+    }));
+
+    res.json(enriched);
+  } catch (error) {
+    console.error('GET /api/reels error:', error);
+    res.status(500).json({ error: 'Failed to fetch reels' });
+  }
+});
+
+app.post('/api/reels', async (req, res) => {
+  try {
+    const { userId, caption, videoData, isAnonymous } = req.body;
+    if (!userId || !videoData) {
+      return res.status(400).json({ error: 'userId and videoData are required' });
+    }
+    // Store base64 data URL as the video URL (suitable for moderate-size videos)
+    const reel = await Reel.create({
+      userId,
+      videoUrl: videoData,
+      caption: caption || '',
+      isAnonymous: Boolean(isAnonymous),
+    });
+    const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/reels error:', error);
+    res.status(500).json({ error: 'Failed to create reel' });
+  }
+});
+
+app.post('/api/reels/:reelId/like', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const { userId } = req.body;
+    const reel = await Reel.findByIdAndUpdate(reelId, { $addToSet: { likedBy: userId } }, { new: true });
+    if (!reel) return res.status(404).json({ error: 'Reel not found' });
+    res.json({ reelId, userId, liked: true, likesCount: reel.likedBy.length });
+  } catch (error) {
+    console.error('POST /api/reels/:reelId/like error:', error);
+    res.status(500).json({ error: 'Failed to like reel' });
+  }
+});
+
+app.delete('/api/reels/:reelId/like', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const { userId } = req.body;
+    const reel = await Reel.findByIdAndUpdate(reelId, { $pull: { likedBy: userId } }, { new: true });
+    if (!reel) return res.status(404).json({ error: 'Reel not found' });
+    res.json({ reelId, userId, liked: false, likesCount: reel.likedBy.length });
+  } catch (error) {
+    console.error('DELETE /api/reels/:reelId/like error:', error);
+    res.status(500).json({ error: 'Failed to unlike reel' });
   }
 });
 
@@ -177,7 +623,7 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`DDU Social server running on http://localhost:${PORT}`);
 });
 

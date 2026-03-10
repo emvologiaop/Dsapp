@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IntroSlider } from './IntroSlider';
 import { SignupForm } from './SignupForm';
+import { LoginForm } from './LoginForm';
 import { TelegramAuth } from './TelegramAuth';
 
 interface OnboardingFlowProps {
@@ -9,7 +10,7 @@ interface OnboardingFlowProps {
 }
 
 export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
-  const [stage, setStage] = useState<'intro' | 'signup' | 'telegram'>('intro');
+  const [stage, setStage] = useState<'intro' | 'signup' | 'login' | 'telegram'>('intro');
   const [userData, setUserData] = useState<any>(null);
 
   const handleIntroComplete = () => {
@@ -19,6 +20,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
   const handleSignupComplete = (data: any) => {
     setUserData(data);
     setStage('telegram');
+  };
+
+  const handleLoginComplete = (data: any) => {
+    onFinish(data);
   };
 
   const handleTelegramComplete = () => {
@@ -48,7 +53,19 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
             exit={{ opacity: 0, x: -100 }}
             className="h-full flex justify-center"
           >
-            <SignupForm onComplete={handleSignupComplete} />
+            <SignupForm onComplete={handleSignupComplete} onSwitchToLogin={() => setStage('login')} />
+          </motion.div>
+        )}
+
+        {stage === 'login' && (
+          <motion.div
+            key="login"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="h-full flex justify-center"
+          >
+            <LoginForm onComplete={handleLoginComplete} onSwitchToSignup={() => setStage('signup')} />
           </motion.div>
         )}
 

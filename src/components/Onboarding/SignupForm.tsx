@@ -7,9 +7,10 @@ import { cn } from '../../lib/utils';
 
 interface SignupFormProps {
   onComplete: (data: any) => void;
+  onSwitchToLogin?: () => void;
 }
 
-export const SignupForm: React.FC<SignupFormProps> = ({ onComplete }) => {
+export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLogin }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: '',
@@ -266,6 +267,14 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete }) => {
           <ArrowRight className="w-5 h-5" />
         </button>
       </div>
+      {onSwitchToLogin && step === 1 && (
+        <p className="text-center mt-4 text-sm text-muted-foreground">
+          Already have an account?{' '}
+          <button onClick={onSwitchToLogin} className="text-primary font-semibold hover:underline">
+            Sign In
+          </button>
+        </p>
+      )}
     </div>
   );
 };

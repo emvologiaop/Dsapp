@@ -7,6 +7,8 @@ import { CreatePost } from './components/CreatePost';
 import { PostActions } from './components/PostActions';
 import { FollowButton } from './components/FollowButton';
 import { Inbox } from './components/Inbox';
+import { CommentsPanel } from './components/CommentsPanel';
+import { ReelsTab } from './components/ReelsTab';
 import { cn } from './lib/utils';
 import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
@@ -22,6 +24,8 @@ export default function App() {
   const [activeChat, setActiveChat] = useState<any>(null);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [commentPostId, setCommentPostId] = useState<string | null>(null);
+  const [chats, setChats] = useState<any[]>([]);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ddu_user');
@@ -39,7 +43,22 @@ export default function App() {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
     }
+    if (isOnboarded && activeTab === 'chat') {
+      fetchChats();
+    }
   }, [isOnboarded, activeTab]);
+
+  const fetchChats = async () => {
+    try {
+      const response = await fetch(`/api/users/${user?.id}/chats`);
+      if (response.ok) {
+        const data = await response.json();
+        setChats(data);
+      }
+    } catch (error) {
+      console.error("Error fetching chats:", error);
+    }
+  };
 
   const fetchPosts = async () => {
     try {
@@ -190,7 +209,7 @@ export default function App() {
                     initialBookmarked={post.isBookmarked}
                     initialComments={post.commentsCount}
                     initialShares={post.sharesCount}
-                    onComment={() => {}}
+                    onComment={() => setCommentPostId(post._id)}
                   />
                 </div>
               </FriendlyCard>
@@ -203,36 +222,38 @@ export default function App() {
         )}
 
         {activeTab === 'reels' && (
-          <div className="h-[70vh] flex flex-col items-center justify-center space-y-4 text-center">
-            <div className="w-20 h-20 bg-neon-blue/10 rounded-full flex items-center justify-center border border-neon-blue/20">
-              <Film size={40} className="text-neon-blue" />
-            </div>
-            <h2 className="text-2xl font-bold tracking-tighter">DDU Reels</h2>
-            <p className="text-white/40 max-w-xs">Vertical video engine with HLS streaming coming soon.</p>
-          </div>
+          <ReelsTab user={user} />
         )}
 
         {activeTab === 'chat' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold">Direct Messages</h2>
             <div className="space-y-2">
-              {/* Mock Chat List - In real app, fetch from /api/chats */}
-              {[1, 2, 3].map((i) => (
-                <FriendlyCard 
-                  key={i} 
-                  onClick={() => setActiveChat({ id: `mock-user-${i}`, name: `Student ${i}` })}
-                  className="flex items-center gap-4 p-4 hover:bg-black/5 transition-all cursor-pointer"
+              {chats.length > 0 ? chats.map((chat) => (
+                <FriendlyCard
+                  key={chat.user.id}
+                  onClick={() => setActiveChat(chat.user)}
+                  className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-all cursor-pointer"
                 >
-                  <div className="w-12 h-12 rounded-full bg-white/10 shrink-0" />
+                  <div className="w-12 h-12 rounded-full bg-muted shrink-0 flex items-center justify-center font-bold text-foreground">
+                    {chat.user.name?.[0] || 'U'}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-bold truncate">Student {i}</p>
-                      <p className="text-[10px] text-white/30">12:45 PM</p>
+                      <p className="text-sm font-bold truncate">{chat.user.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
-                    <p className="text-xs text-white/50 truncate">Hey, did you finish the assignment?</p>
+                    <p className="text-xs text-muted-foreground truncate">{chat.lastMessage.text}</p>
                   </div>
                 </FriendlyCard>
-              ))}
+              )) : (
+                <div className="text-center py-20 text-muted-foreground">
+                  <p>No conversations yet.</p>
+                  <p className="text-sm mt-2">Follow people and start chatting!</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -342,6 +363,15 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {commentPostId && user && (
+        <CommentsPanel
+          postId={commentPostId}
+          userId={user.id}
+          isAnonymous={isAnonymous}
+          onClose={() => setCommentPostId(null)}
+        />
+      )}
 
         {/* Bottom Nav */}
         <Dock 
