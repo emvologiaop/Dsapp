@@ -13,6 +13,30 @@ interface CreatePostProps {
 export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPostCreated }) => {
   const [content, setContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+
+    if (imageFiles.length > 0) {
+      setSelectedImages(prev => [...prev, ...imageFiles].slice(0, 10)); // Max 10 images
+
+      imageFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setImagePreviews(prev => [...prev, e.target?.result as string].slice(0, 10));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handlePost = async () => {
     if (!content.trim()) return;
@@ -24,11 +48,14 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         body: JSON.stringify({
           userId: user.id,
           content,
-          isAnonymous
+          isAnonymous,
+          mediaUrls: imagePreviews
         })
       });
       if (response.ok) {
         setContent('');
+        setSelectedImages([]);
+        setImagePreviews([]);
         onPostCreated();
       }
     } catch (error) {
@@ -51,11 +78,39 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
           className="w-full bg-transparent outline-none text-sm py-2 resize-none h-20 text-foreground placeholder-muted-foreground"
         />
       </div>
+
+      {imagePreviews.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {imagePreviews.map((preview, index) => (
+            <div key={index} className="relative w-20 h-20 rounded-lg overflow-hidden border border-border">
+              <img src={preview} alt={`Preview ${index + 1}`} className="w-full h-full object-cover" />
+              <button
+                onClick={() => removeImage(index)}
+                className="absolute top-1 right-1 w-5 h-5 bg-black/60 rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
+              >
+                <X size={12} className="text-white" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-2 border-t border-border">
         <div className="flex items-center gap-4">
-          <button className="text-muted-foreground hover:text-primary transition-all">
+          <label className="text-muted-foreground hover:text-primary transition-all cursor-pointer">
             <ImageIcon size={20} />
-          </button>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageSelect}
+              className="hidden"
+              disabled={imagePreviews.length >= 10}
+            />
+          </label>
+          {imagePreviews.length > 0 && (
+            <span className="text-xs text-muted-foreground">{imagePreviews.length}/10</span>
+          )}
         </div>
         <button
           onClick={handlePost}

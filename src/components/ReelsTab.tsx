@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
 import { Play, Pause, Volume2, VolumeX, Heart, MessageCircle, Share2, Plus, Upload, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ReelCommentsPanel } from './ReelCommentsPanel';
+import { ShareModal } from './ShareModal';
 
 interface Reel {
   _id: string;
@@ -30,7 +32,14 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [likedReels, setLikedReels] = useState<Set<string>>(new Set());
+  const [showComments, setShowComments] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const [lastTap, setLastTap] = useState(0);
+  const [showLikeAnimation, setShowLikeAnimation] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const y = useMotionValue(0);
+  const opacity = useTransform(y, [-200, 0, 200], [0.5, 1, 0.5]);
 
   useEffect(() => {
     fetchReels();
@@ -45,6 +54,20 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
       }
     }
   }, [isPlaying, currentIndex]);
+
+  // Update progress bar
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const updateProgress = () => {
+      const progress = (video.currentTime / video.duration) * 100;
+      setPlaybackProgress(progress || 0);
+    };
+
+    video.addEventListener('timeupdate', updateProgress);
+    return () => video.removeEventListener('timeupdate', updateProgress);
+  }, [currentIndex]);
 
   const fetchReels = async () => {
     try {
@@ -83,138 +106,63 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
     }
   };
 
-  const compressVideo = async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+  const handleDoubleTap = () => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
 
-      video.preload = 'metadata';
-      video.src = URL.createObjectURL(file);
+    if (now - lastTap < DOUBLE_TAP_DELAY) {
+      const currentReel = reels[currentIndex];
+      if (!likedReels.has(currentReel._id)) {
+        handleLike(currentReel._id);
+        setShowLikeAnimation(true);
+        setTimeout(() => setShowLikeAnimation(false), 1000);
+      }
+    }
+    setLastTap(now);
+  };
 
-      video.onloadedmetadata = async () => {
-        // Set compression parameters
-        const MAX_WIDTH = 720;  // 720p max resolution
-        const MAX_HEIGHT = 1280;
-        const TARGET_FPS = 30;   // Target framerate
-        const QUALITY = 0.7;     // JPEG quality for frames
-
-        // Calculate scaled dimensions (maintain aspect ratio)
-        let width = video.videoWidth;
-        let height = video.videoHeight;
-
-        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-          const aspectRatio = width / height;
-          if (width > height) {
-            width = MAX_WIDTH;
-            height = Math.round(width / aspectRatio);
-          } else {
-            height = MAX_HEIGHT;
-            width = Math.round(height * aspectRatio);
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        try {
-          // For very short videos or images, just compress as single frame
-          if (video.duration <= 0.1 || file.type.startsWith('image/')) {
-            ctx?.drawImage(video, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', QUALITY);
-            URL.revokeObjectURL(video.src);
-            resolve(compressedDataUrl);
-            return;
-          }
-
-          // For longer videos, extract key frames
-          const frameInterval = 1000 / TARGET_FPS; // ms between frames
-          const duration = Math.min(video.duration, 60); // Max 60 seconds
-          const frames: string[] = [];
-
-          let currentTime = 0;
-          const captureFrame = () => {
-            if (currentTime >= duration) {
-              URL.revokeObjectURL(video.src);
-
-              // Create a simple "video" as base64 (first frame for preview)
-              // In production, you'd want to use MediaRecorder API or server-side processing
-              if (frames.length > 0) {
-                resolve(frames[0]); // Use first frame as thumbnail
-              } else {
-                ctx?.drawImage(video, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', QUALITY));
-              }
-              return;
-            }
-
-            video.currentTime = currentTime;
-          };
-
-          video.onseeked = () => {
-            ctx?.drawImage(video, 0, 0, width, height);
-            frames.push(canvas.toDataURL('image/jpeg', QUALITY));
-            currentTime += frameInterval / 1000;
-
-            if (currentTime < duration) {
-              captureFrame();
-            } else {
-              URL.revokeObjectURL(video.src);
-              resolve(frames[0]); // Use first frame
-            }
-          };
-
-          captureFrame();
-        } catch (error) {
-          URL.revokeObjectURL(video.src);
-          reject(error);
-        }
-      };
-
-      video.onerror = () => {
-        URL.revokeObjectURL(video.src);
-        reject(new Error('Failed to load video'));
-      };
-    });
+  const handleDragEnd = (_: any, info: PanInfo) => {
+    const threshold = 100;
+    if (info.offset.y < -threshold && currentIndex < reels.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+      setPlaybackProgress(0);
+      y.set(0);
+    } else if (info.offset.y > threshold && currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+      setPlaybackProgress(0);
+      y.set(0);
+    } else {
+      y.set(0);
+    }
   };
 
   const handleUpload = async () => {
     if (!uploadFile) return;
     setIsUploading(true);
     try {
-      // Check file size (warn if > 50MB)
-      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-      if (uploadFile.size > MAX_FILE_SIZE) {
-        alert('File size exceeds 50MB. Please choose a smaller file.');
-        setIsUploading(false);
-        return;
-      }
-
-      // Compress video/image
-      const compressedData = await compressVideo(uploadFile);
-
-      const res = await fetch('/api/reels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id,
-          caption: uploadCaption,
-          videoData: compressedData,
-          isAnonymous: false,
-        }),
-      });
-
-      if (res.ok) {
-        setShowUpload(false);
-        setUploadCaption('');
-        setUploadFile(null);
-        fetchReels();
-      } else {
-        alert('Upload failed. Please try again.');
-      }
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target?.result as string;
+        const res = await fetch('/api/reels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user?.id,
+            caption: uploadCaption,
+            videoData: base64,
+            isAnonymous: false,
+          }),
+        });
+        if (res.ok) {
+          setShowUpload(false);
+          setUploadCaption('');
+          setUploadFile(null);
+          fetchReels();
+        }
+      };
+      reader.readAsDataURL(uploadFile);
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Upload failed. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -243,24 +191,17 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
               {uploadFile ? (
                 <div className="space-y-2">
                   <p className="font-medium">{uploadFile.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
-                    {uploadFile.type.startsWith('image/') ? ' (Image)' : ' (Video)'}
-                  </p>
-                  {isUploading && (
-                    <p className="text-xs text-primary animate-pulse">Compressing and uploading...</p>
-                  )}
+                  <p className="text-sm text-muted-foreground">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <Upload size={40} className="mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Tap to select a video or image</p>
-                  <p className="text-xs text-muted-foreground">Max 50MB • Auto-compressed to 720p</p>
+                  <p className="text-sm text-muted-foreground">Tap to select a video</p>
                 </div>
               )}
               <input
                 type="file"
-                accept="video/*,image/*"
+                accept="video/*"
                 className="hidden"
                 onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
               />
@@ -318,7 +259,22 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
         </button>
       </div>
 
-      <div className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-[70vh]">
+      <motion.div
+        className="relative rounded-2xl overflow-hidden bg-black aspect-[9/16] max-h-[70vh]"
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={0.2}
+        onDragEnd={handleDragEnd}
+        style={{ y, opacity }}
+      >
+        {/* Progress Bar */}
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/20 z-20">
+          <div
+            className="h-full bg-white transition-all duration-100"
+            style={{ width: `${playbackProgress}%` }}
+          />
+        </div>
+
         <video
           ref={videoRef}
           src={currentReel?.videoUrl}
@@ -326,12 +282,37 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
           muted={isMuted}
           playsInline
           className="w-full h-full object-cover"
-          onClick={() => setIsPlaying(!isPlaying)}
+          onClick={handleDoubleTap}
         />
 
+        {/* Like Animation */}
+        {showLikeAnimation && (
+          <motion.div
+            initial={{ scale: 0, opacity: 1 }}
+            animate={{ scale: 1.2, opacity: 0 }}
+            transition={{ duration: 0.6 }}
+            className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+          >
+            <Heart size={100} className="text-white fill-white" />
+          </motion.div>
+        )}
+
         {/* Controls Overlay */}
-        <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
-          <div />
+        <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-10">
+          {/* Top Info */}
+          <div className="flex items-center justify-between">
+            <div className="text-white text-xs bg-black/30 backdrop-blur-sm px-3 py-1 rounded-full pointer-events-auto">
+              {currentIndex + 1} / {reels.length}
+            </div>
+            <button
+              onClick={() => setIsMuted(!isMuted)}
+              className="pointer-events-auto w-8 h-8 bg-black/30 backdrop-blur-sm rounded-full flex items-center justify-center"
+            >
+              {isMuted ? <VolumeX size={18} className="text-white" /> : <Volume2 size={18} className="text-white" />}
+            </button>
+          </div>
+
+          {/* Bottom Info & Actions */}
           <div className="flex items-end justify-between pointer-events-auto">
             <div className="text-white space-y-1 max-w-[70%]">
               <p className="font-bold text-sm">
@@ -351,53 +332,63 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
                 <span className="text-white text-xs">{currentReel.likesCount}</span>
               </button>
 
-              <button className="flex flex-col items-center gap-1">
+              <button onClick={() => setShowComments(true)} className="flex flex-col items-center gap-1">
                 <MessageCircle size={28} className="text-white" />
                 <span className="text-white text-xs">{currentReel.commentsCount}</span>
               </button>
 
-              <button className="flex flex-col items-center gap-1">
+              <button onClick={() => setShowShare(true)} className="flex flex-col items-center gap-1">
                 <Share2 size={28} className="text-white" />
                 <span className="text-white text-xs">{currentReel.sharesCount}</span>
-              </button>
-
-              <button onClick={() => setIsMuted(!isMuted)}>
-                {isMuted ? <VolumeX size={24} className="text-white" /> : <Volume2 size={24} className="text-white" />}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Play/Pause indicator */}
-        {!isPlaying && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        {/* Play/Pause toggle */}
+        <button
+          onClick={() => setIsPlaying(!isPlaying)}
+          className="absolute inset-0 flex items-center justify-center z-5"
+        >
+          {!isPlaying && (
             <div className="w-16 h-16 bg-black/40 rounded-full flex items-center justify-center">
               <Play size={32} className="text-white ml-1" />
             </div>
-          </div>
-        )}
+          )}
+        </button>
+      </motion.div>
+
+      {/* Swipe Hint */}
+      <div className="text-center mt-4 text-xs text-muted-foreground">
+        Swipe up or down to navigate • Double tap to like
       </div>
 
-      {/* Reel navigation */}
-      <div className="flex items-center justify-between mt-4">
-        <button
-          onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
-          disabled={currentIndex === 0}
-          className="px-4 py-2 bg-muted rounded-xl text-sm font-medium disabled:opacity-30 transition-all"
-        >
-          Previous
-        </button>
-        <span className="text-sm text-muted-foreground">
-          {currentIndex + 1} / {reels.length}
-        </span>
-        <button
-          onClick={() => setCurrentIndex(Math.min(reels.length - 1, currentIndex + 1))}
-          disabled={currentIndex === reels.length - 1}
-          className="px-4 py-2 bg-muted rounded-xl text-sm font-medium disabled:opacity-30 transition-all"
-        >
-          Next
-        </button>
-      </div>
+      {/* Comments Panel */}
+      {showComments && currentReel && (
+        <ReelCommentsPanel
+          reelId={currentReel._id}
+          userId={user?.id}
+          isAnonymous={false}
+          onClose={() => setShowComments(false)}
+        />
+      )}
+
+      {/* Share Modal */}
+      {showShare && currentReel && (
+        <ShareModal
+          isOpen={showShare}
+          onClose={() => setShowShare(false)}
+          postId={currentReel._id}
+          userId={user?.id}
+          onShareComplete={() => {
+            setReels((prev) =>
+              prev.map((r) =>
+                r._id === currentReel._id ? { ...r, sharesCount: r.sharesCount + 1 } : r
+              )
+            );
+          }}
+        />
+      )}
     </div>
   );
 };

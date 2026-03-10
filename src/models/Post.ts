@@ -4,6 +4,7 @@ export interface IPost extends Document {
   userId: mongoose.Types.ObjectId;
   content: string;
   mediaUrl?: string;
+  mediaUrls?: string[];
   isAnonymous: boolean;
   likedBy: mongoose.Types.ObjectId[];
   bookmarkedBy: mongoose.Types.ObjectId[];
@@ -18,6 +19,7 @@ const PostSchema = new Schema<IPost>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true },
     mediaUrl: { type: String },
+    mediaUrls: [{ type: String }],
     isAnonymous: { type: Boolean, default: false },
     likedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     bookmarkedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],

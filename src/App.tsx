@@ -9,6 +9,7 @@ import { FollowButton } from './components/FollowButton';
 import { Inbox } from './components/Inbox';
 import { CommentsPanel } from './components/CommentsPanel';
 import { ReelsTab } from './components/ReelsTab';
+import { ImageCarousel } from './components/ImageCarousel';
 import { cn } from './lib/utils';
 import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
@@ -27,6 +28,25 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [chats, setChats] = useState<any[]>([]);
+
+  const handleDoubleTapLike = async (postId: string) => {
+    try {
+      const post = posts.find(p => p._id === postId);
+      if (!post || post.isLiked) return; // Don't double-like
+
+      setPosts(posts.map(p =>
+        p._id === postId ? { ...p, likesCount: p.likesCount + 1, isLiked: true } : p
+      ));
+
+      await fetch(`/api/posts/${postId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id }),
+      });
+    } catch (error) {
+      console.error('Failed to like post:', error);
+    }
+  };
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ddu_user');
@@ -170,43 +190,33 @@ export default function App() {
                     </div>
                   </div>
                   {!post.isAnonymous && user && (
-                    <FollowButton 
-                      userId={user.id} 
-                      targetId={post.userId._id} 
-                      initialIsFollowing={post.isFollowing} 
+                    <FollowButton
+                      userId={user.id}
+                      targetId={post.userId._id}
+                      initialIsFollowing={post.isFollowing}
                     />
                   )}
                 </div>
-                {post.mediaUrl && (
-                  <div className="relative group">
-                    <img 
-                      src={post.mediaUrl} 
-                      alt="Post" 
-                      className="w-full aspect-video object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                    <button 
-                      onClick={() => {
-                        const link = document.createElement('a');
-                        link.href = post.mediaUrl;
-                        link.download = `social_${post._id}.jpg`;
-                        link.click();
-                      }}
-                      className="absolute bottom-4 right-4 bg-background/80 backdrop-blur-md text-foreground px-4 py-2 rounded-full text-xs font-bold opacity-0 group-hover:opacity-100 transition-all border border-border"
-                    >
-                      Save
-                    </button>
-                  </div>
-                )}
+                {post.mediaUrls && post.mediaUrls.length > 0 ? (
+                  <ImageCarousel
+                    images={post.mediaUrls}
+                    onDoubleTap={() => handleDoubleTapLike(post._id)}
+                  />
+                ) : post.mediaUrl ? (
+                  <ImageCarousel
+                    images={[post.mediaUrl]}
+                    onDoubleTap={() => handleDoubleTapLike(post._id)}
+                  />
+                ) : null}
                 <div className="p-4 space-y-2">
                   <p className="text-sm text-foreground leading-relaxed">
                     {post.content}
                   </p>
-                  <PostActions 
-                    postId={post._id} 
-                    userId={user?.id} 
-                    initialLikes={post.likesCount} 
-                    initialLiked={post.isLiked} 
+                  <PostActions
+                    postId={post._id}
+                    userId={user?.id}
+                    initialLikes={post.likesCount}
+                    initialLiked={post.isLiked}
                     initialBookmarked={post.isBookmarked}
                     initialComments={post.commentsCount}
                     initialShares={post.sharesCount}
