@@ -8,6 +8,20 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/65c92b19-8cd2-4e0d-9004-44c63a87f07f
 
+## Features
+
+### Advanced Instagram-like Chat 💬
+- **Message Reactions**: React with emojis (❤️ 😂 😮 😢 😡 👍 🔥 🎉) or double-tap to like
+- **Message Replies**: Thread conversations by replying to specific messages
+- **Typing Indicators**: See when someone is typing in real-time
+- **Read Receipts**: Check marks show sent/delivered/seen status
+- **Online Status**: Real-time presence tracking with "Active now" indicator
+- **Image Sharing**: Send photos with automatic compression (800px max, 70% JPEG quality)
+- **Message Deletion**: Unsend your messages
+- **Smooth Animations**: Instagram-style UI with Framer Motion animations
+
+See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete documentation.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
