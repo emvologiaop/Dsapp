@@ -18,3 +18,7 @@ View your app in AI Studio: https://ai.studio/apps/65c92b19-8cd2-4e0d-9004-44c63
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Roadmap and ideas
+
+Open **Settings → Roadmap** in the app to see a curated list of feature ideas and enhancements (with impact, status, and upvotes). Use the form there to quickly propose new improvements without leaving the product.
