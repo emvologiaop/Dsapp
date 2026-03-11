@@ -21,7 +21,7 @@ import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
-import { authenticate, requireAdmin } from './src/middleware/auth.js';
+import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
 
 dotenv.config();
 
@@ -513,6 +513,48 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
   } catch (error) {
     console.error('POST /api/posts/:postId/comments error:', error);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// User delete own post
+app.delete('/api/posts/:postId', authenticate, requirePostOwnership, async (req, res) => {
+  try {
+    req.post.isDeleted = true;
+    req.post.deletedAt = new Date();
+    req.post.deletedBy = req.user._id;
+    await req.post.save();
+
+    res.json({ success: true, message: 'Post deleted successfully' });
+  } catch (error) {
+    console.error('DELETE /api/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+});
+
+// User edit own post
+app.put('/api/posts/:postId', authenticate, requirePostOwnership, async (req, res) => {
+  try {
+    const { content, mediaUrls } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    req.post.content = content;
+    if (mediaUrls !== undefined) {
+      req.post.mediaUrls = mediaUrls;
+    }
+    req.post.updatedAt = new Date();
+    await req.post.save();
+
+    const populated = await Post.findById(req.post._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.json(populated);
+  } catch (error) {
+    console.error('PUT /api/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to update post' });
   }
 });
 
@@ -1117,6 +1159,105 @@ app.post('/api/reels/:reelId/share', async (req, res) => {
   } catch (error) {
     console.error('POST /api/reels/:reelId/share error:', error);
     res.status(500).json({ error: 'Failed to share reel' });
+  }
+});
+
+// User delete own reel
+app.delete('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
+  try {
+    req.reel.isDeleted = true;
+    req.reel.deletedAt = new Date();
+    req.reel.deletedBy = req.user._id;
+    await req.reel.save();
+
+    res.json({ success: true, message: 'Reel deleted successfully' });
+  } catch (error) {
+    console.error('DELETE /api/reels/:reelId error:', error);
+    res.status(500).json({ error: 'Failed to delete reel' });
+  }
+});
+
+// User edit own reel
+app.put('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
+  try {
+    const { caption } = req.body;
+
+    req.reel.caption = caption || '';
+    req.reel.updatedAt = new Date();
+    await req.reel.save();
+
+    const populated = await Reel.findById(req.reel._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.json(populated);
+  } catch (error) {
+    console.error('PUT /api/reels/:reelId error:', error);
+    res.status(500).json({ error: 'Failed to update reel' });
+  }
+});
+
+// ── Search Routes ──────────────────────────────────────────────────────────────
+
+// Global search endpoint
+app.get('/api/search', async (req, res) => {
+  try {
+    const { query, type = 'all', limit = 10 } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const searchRegex = { $regex: query, $options: 'i' };
+    const limitNum = Math.min(parseInt(limit as string) || 10, 50);
+
+    const results: any = {
+      users: [],
+      posts: [],
+      reels: [],
+    };
+
+    // Search users
+    if (type === 'all' || type === 'users') {
+      results.users = await User.find({
+        $or: [
+          { name: searchRegex },
+          { username: searchRegex },
+        ],
+      })
+        .select('name username avatarUrl bio')
+        .limit(limitNum)
+        .lean();
+    }
+
+    // Search posts
+    if (type === 'all' || type === 'posts') {
+      results.posts = await Post.find({
+        content: searchRegex,
+        isDeleted: { $ne: true },
+      })
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean();
+    }
+
+    // Search reels
+    if (type === 'all' || type === 'reels') {
+      results.reels = await Reel.find({
+        caption: searchRegex,
+        isDeleted: { $ne: true },
+      })
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean();
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('GET /api/search error:', error);
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
