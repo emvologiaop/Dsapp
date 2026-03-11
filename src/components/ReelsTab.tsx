@@ -9,6 +9,7 @@ import { uploadVideoToR2, UploadProgress } from '../utils/r2Upload';
 import { usePredictivePreload } from '../hooks/usePredictivePreload';
 import { VideoPlayer } from './VideoPlayer';
 import { ReelOptions } from './ReelOptions';
+import { HashtagText } from './HashtagText';
 
 interface VideoQuality {
   quality: string;
@@ -35,9 +36,11 @@ interface Reel {
 
 interface ReelsTabProps {
   user: any;
+  onViewProfile?: (userId?: string | null) => void;
+  onHashtagClick?: (hashtag: string) => void;
 }
 
-export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
+export const ReelsTab: React.FC<ReelsTabProps> = ({ user, onViewProfile, onHashtagClick }) => {
   const [reels, setReels] = useState<Reel[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -388,9 +391,16 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
           <div className="flex items-end justify-between pointer-events-auto gap-4">
             <div className="flex-1 text-white space-y-2 bg-gradient-to-t from-black/60 to-transparent p-3 -m-3 rounded-t-2xl">
               <div className="flex items-center justify-between">
-                <p className="font-bold text-sm drop-shadow-lg">
-                  {currentReel?.isAnonymous ? 'Ghost' : (currentReel?.userId?.name || 'User')}
-                </p>
+                <button
+                  type="button"
+                  onClick={() => !currentReel?.isAnonymous && onViewProfile?.(currentReel?.userId?._id)}
+                  disabled={currentReel?.isAnonymous || !currentReel?.userId?._id}
+                  className="text-left disabled:cursor-default"
+                >
+                  <p className="font-bold text-sm drop-shadow-lg hover:text-primary transition-colors">
+                    {currentReel?.isAnonymous ? 'Ghost' : (currentReel?.userId?.name || 'User')}
+                  </p>
+                </button>
                 {!currentReel?.isAnonymous && (
                   <ReelOptions
                     reelId={currentReel._id}
@@ -412,7 +422,12 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
                 )}
               </div>
               {currentReel?.caption && (
-                <p className="text-xs text-white/90 drop-shadow-lg line-clamp-2">{currentReel.caption}</p>
+                <HashtagText
+                  text={currentReel.caption}
+                  className="text-xs text-white/90 drop-shadow-lg line-clamp-2"
+                  hashtagClassName="text-primary-foreground hover:underline"
+                  onHashtagClick={onHashtagClick}
+                />
               )}
             </div>
 
@@ -478,6 +493,7 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
           userId={user?.id}
           isAnonymous={false}
           onClose={() => setShowComments(false)}
+          onViewProfile={onViewProfile}
         />
       )}
 

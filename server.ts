@@ -391,21 +391,26 @@ app.get('/api/posts', async (req, res) => {
 app.post('/api/posts', async (req, res) => {
   try {
     const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
-    if (!userId || !content) {
-      return res.status(400).json({ error: 'userId and content are required' });
+    const normalizedContent = typeof content === 'string' ? content.trim() : '';
+    const hasMedia = Boolean(mediaUrl) || (Array.isArray(mediaUrls) && mediaUrls.length > 0);
+
+    if (!userId || (!normalizedContent && !hasMedia)) {
+      return res.status(400).json({ error: 'userId and either content or media are required' });
     }
 
     // Extract mentions from content
-    const mentions = extractMentions(content);
+    const mentions = extractMentions(normalizedContent);
+    const hashtags = extractHashtags(normalizedContent);
 
     const post = await Post.create({
       userId,
-      content,
+      content: normalizedContent,
       isAnonymous: Boolean(isAnonymous),
       mediaUrl,
       mediaUrls: mediaUrls || [],
       taggedUsers: taggedUsers || [],
-      mentions
+      mentions,
+      hashtags,
     });
 
     // Send mention notifications
@@ -1146,16 +1151,19 @@ app.post('/api/reels', async (req, res) => {
     }
 
     // Extract mentions from caption
-    const mentions = caption ? extractMentions(caption) : [];
+    const normalizedCaption = typeof caption === 'string' ? caption.trim() : '';
+    const mentions = normalizedCaption ? extractMentions(normalizedCaption) : [];
+    const hashtags = normalizedCaption ? extractHashtags(normalizedCaption) : [];
 
     // Store base64 data URL as the video URL (suitable for moderate-size videos)
     const reel = await Reel.create({
       userId,
       videoUrl: videoData,
-      caption: caption || '',
+      caption: normalizedCaption,
       isAnonymous: Boolean(isAnonymous),
       taggedUsers: taggedUsers || [],
-      mentions
+      mentions,
+      hashtags,
     });
 
     // Send mention notifications
@@ -1500,7 +1508,9 @@ app.get('/api/search', async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
 
-    const searchRegex = { $regex: query, $options: 'i' };
+    const queryString = query.trim();
+    const searchRegex = { $regex: queryString, $options: 'i' };
+    const normalizedHashtag = normalizeHashtagQuery(queryString);
     const limitNum = Math.min(parseInt(limit as string) || 10, 50);
 
     const results: any = {
@@ -1525,7 +1535,10 @@ app.get('/api/search', async (req, res) => {
     // Search posts
     if (type === 'all' || type === 'posts') {
       results.posts = await Post.find({
-        content: searchRegex,
+        $or: [
+          { content: searchRegex },
+          ...(normalizedHashtag ? [{ hashtags: normalizedHashtag }] : []),
+        ],
         isDeleted: { $ne: true },
       })
         .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
@@ -1538,7 +1551,10 @@ app.get('/api/search', async (req, res) => {
     // Search reels
     if (type === 'all' || type === 'reels') {
       results.reels = await Reel.find({
-        caption: searchRegex,
+        $or: [
+          { caption: searchRegex },
+          ...(normalizedHashtag ? [{ hashtags: normalizedHashtag }] : []),
+        ],
         isDeleted: { $ne: true },
       })
         .select('userId caption thumbnailUrl duration likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
@@ -1566,6 +1582,20 @@ function extractMentions(text: string): string[] {
     mentions.push(match[1].toLowerCase());
   }
   return [...new Set(mentions)]; // Remove duplicates
+}
+
+function extractHashtags(text: string): string[] {
+  const hashtagRegex = /#(\w+)/g;
+  const hashtags: string[] = [];
+  let match;
+  while ((match = hashtagRegex.exec(text)) !== null) {
+    hashtags.push(match[1].toLowerCase());
+  }
+  return [...new Set(hashtags)];
+}
+
+function normalizeHashtagQuery(query: string): string {
+  return query.trim().replace(/^#+/, '').toLowerCase();
 }
 
 // Send mention notifications

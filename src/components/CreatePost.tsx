@@ -53,7 +53,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   };
 
   const handlePost = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() && selectedImages.length === 0) return;
     setIsPosting(true);
     setUploadProgress(0);
 
@@ -88,7 +88,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          content,
+          content: content.trim(),
           isAnonymous,
           mediaUrls,
           taggedUsers: taggedUsers.map(u => u._id)
@@ -122,10 +122,10 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
           {isAnonymous ? <Ghost size={20} className="text-muted-foreground" /> : (user?.name?.[0] || 'U')}
         </div>
         <div className="flex-1">
-          <MentionInput
-            value={content}
-            onChange={setContent}
-            placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "What's happening on campus?"}
+            <MentionInput
+              value={content}
+              onChange={setContent}
+              placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "Write a caption or upload photos..."}
             textareaClassName="border-0 focus:ring-0 p-0"
             rows={3}
             disabled={isPosting}
@@ -194,7 +194,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         </div>
         <button
           onClick={handlePost}
-          disabled={isPosting || !content.trim()}
+          disabled={isPosting || (!content.trim() && imagePreviews.length === 0)}
           className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
         >
           {isPosting && <Loader2 size={16} className="animate-spin" />}

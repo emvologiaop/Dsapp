@@ -22,6 +22,7 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { HashtagText } from './components/HashtagText';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -37,6 +38,8 @@ export default function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [viewingProfileUserId, setViewingProfileUserId] = useState<string | null>(null);
+  const [searchInitialQuery, setSearchInitialQuery] = useState('');
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
@@ -157,6 +160,40 @@ export default function App() {
     }
   };
 
+  const openProfile = (targetUserId?: string | null) => {
+    if (!targetUserId) return;
+    setViewingProfileUserId(targetUserId);
+    setActiveTab('profile');
+    setShowSearch(false);
+  };
+
+  const openOwnProfile = () => {
+    if (!user?.id) return;
+    setViewingProfileUserId(user.id);
+    setActiveTab('profile');
+  };
+
+  const startChatWithUser = (targetUser: any) => {
+    if (!targetUser) return;
+
+    const normalizedUser = {
+      id: targetUser.id || targetUser._id,
+      name: targetUser.name || 'User',
+      username: targetUser.username || '',
+      avatarUrl: targetUser.avatarUrl || '',
+    };
+
+    if (!normalizedUser.id || normalizedUser.id === user?.id) return;
+
+    setActiveChat(normalizedUser);
+    setShowSearch(false);
+  };
+
+  const openHashtagSearch = (hashtag: string) => {
+    setSearchInitialQuery(hashtag);
+    setShowSearch(true);
+  };
+
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
   }
@@ -213,7 +250,7 @@ export default function App() {
             <Ghost size={20} />
           </button>
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={openOwnProfile}
             className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-bold text-accent overflow-hidden hover:border-accent/50 transition-all"
           >
             {user?.avatarUrl ? (
@@ -258,13 +295,20 @@ export default function App() {
               <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => !post.isAnonymous && openProfile(post.userId?._id)}
+                      disabled={post.isAnonymous || !post.userId?._id}
+                      className="flex items-center gap-3 text-left disabled:cursor-default"
+                    >
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                       {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
                     </div>
                     <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                      <p className="text-sm font-bold hover:text-primary transition-colors">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
+                    </button>
                   </div>
                   <div className="flex items-center gap-2">
                     {!post.isAnonymous && user && post.userId?._id !== user.id && (
@@ -305,9 +349,11 @@ export default function App() {
                   />
                 ) : null}
                 <div className="p-4 space-y-2">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {post.content}
-                  </p>
+                  <HashtagText
+                    text={post.content}
+                    className="text-sm text-foreground leading-relaxed whitespace-pre-wrap"
+                    onHashtagClick={openHashtagSearch}
+                  />
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -329,7 +375,7 @@ export default function App() {
         )}
 
         {activeTab === 'reels' && (
-          <ReelsTab user={user} />
+          <ReelsTab user={user} onViewProfile={openProfile} onHashtagClick={openHashtagSearch} />
         )}
 
         {activeTab === 'chat' && (
@@ -371,9 +417,11 @@ export default function App() {
 
         {activeTab === 'profile' && user && (
           <InstagramProfile
-            userId={user.id}
+            userId={viewingProfileUserId || user.id}
             currentUserId={user.id}
             onEditProfile={() => setShowEditProfile(true)}
+            onBack={viewingProfileUserId && viewingProfileUserId !== user.id ? openOwnProfile : undefined}
+            onMessageUser={startChatWithUser}
           />
         )}
 
@@ -526,6 +574,7 @@ export default function App() {
           userId={user.id}
           isAnonymous={isAnonymous}
           onClose={() => setCommentPostId(null)}
+          onViewProfile={openProfile}
         />
       )}
 
@@ -539,7 +588,16 @@ export default function App() {
       )}
 
       {showSearch && (
-        <SearchPanel onClose={() => setShowSearch(false)} />
+        <SearchPanel
+          currentUserId={user?.id}
+          initialQuery={searchInitialQuery}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchInitialQuery('');
+          }}
+          onViewProfile={openProfile}
+          onStartChat={startChatWithUser}
+        />
       )}
 
         {/* Bottom Nav */}
@@ -548,7 +606,7 @@ export default function App() {
             { icon: Home, label: 'Home', onClick: () => setActiveTab('home') },
             { icon: Film, label: 'Reels', onClick: () => setActiveTab('reels') },
             { icon: MessageSquare, label: 'Chat', onClick: () => setActiveTab('chat') },
-            { icon: User, label: 'Profile', onClick: () => setActiveTab('profile') },
+            { icon: User, label: 'Profile', onClick: openOwnProfile },
             { icon: Settings, label: 'Settings', onClick: () => setActiveTab('settings') },
           ]}
           className="fixed bottom-0 left-0 right-0 z-40"

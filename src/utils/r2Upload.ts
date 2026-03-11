@@ -2,7 +2,7 @@
  * R2 Upload utilities for client-side file uploads to Cloudflare R2
  */
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = '';
 
 export interface UploadProgress {
   loaded: number;
