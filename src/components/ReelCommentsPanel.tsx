@@ -5,7 +5,8 @@ import { X, Send, Ghost } from 'lucide-react';
 interface Comment {
   _id: string;
   userId: { _id: string; name: string } | null;
-  text: string;
+  text?: string;
+  content?: string;
   isAnonymous: boolean;
   createdAt: string;
 }
@@ -108,7 +109,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                     <p className="text-sm font-bold">
                       {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
                     </p>
-                    <p className="text-sm text-foreground mt-1">{comment.text}</p>
+                    <p className="text-sm text-foreground mt-1">{comment.content || comment.text}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(comment.createdAt).toLocaleString()}
                     </p>

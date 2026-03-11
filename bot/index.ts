@@ -7,12 +7,16 @@ import { Notification } from '../src/models/Notification.js';
 import { Message } from '../src/models/Message.js';
 import { Post } from '../src/models/Post.js';
 import { connectDB } from '../src/db.js';
+import { resolveTelegramWebhookUrl } from '../src/utils/telegram.js';
 
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api/telegram/webhook` : undefined);
+const webhookUrl = resolveTelegramWebhookUrl({
+  explicitUrl: process.env.TELEGRAM_WEBHOOK_URL,
+  appUrl: process.env.APP_URL,
+  vercelUrl: process.env.VERCEL_URL,
+});
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 const useWebhook = Boolean(webhookUrl);
 

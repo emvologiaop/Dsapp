@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, ShieldCheck, Copy, ExternalLink, RefreshCw } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
-import { cn } from '../../lib/utils';
+import { getTelegramHandle, getTelegramProfileUrl } from '../../utils/telegram';
 
 interface TelegramAuthProps {
   onComplete: () => void;
@@ -13,6 +13,9 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
   const [authCode, setAuthCode] = useState(initialCode || '');
   const [isVerifying, setIsVerifying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
+  const botHandle = getTelegramHandle(botUsername);
+  const botUrl = getTelegramProfileUrl(botUsername);
 
   useEffect(() => {
     if (!initialCode) {
@@ -46,7 +49,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
       if (data.verified) {
         onComplete();
       } else {
-        alert("Verification still pending. Please make sure you've sent the code to @DDU_social_BOT");
+        alert(`Verification still pending. Please make sure you've sent the code to ${botHandle}`);
       }
     } catch (error) {
       console.error("Verification error:", error);
@@ -69,10 +72,10 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
       <FriendlyCard className="w-full space-y-6">
         <div className="space-y-4">
           <p className="text-sm text-white/60">
-            1. Open <span className="text-neon-blue font-bold">@DDU_social_BOT</span> on Telegram
+            1. Open <span className="text-neon-blue font-bold">{botHandle}</span> on Telegram
           </p>
           <a
-            href="https://t.me/DDU_social_BOT"
+            href={botUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-xs bg-white/5 border border-white/10 px-4 py-2 rounded-full hover:bg-white/10 transition-all"

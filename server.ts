@@ -43,10 +43,7 @@ const io = new SocketIOServer(httpServer, {
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({ origin: allowedOrigins }));
-app.use(express.json({ limit: '100kb' }));
-// Use higher limit only for upload endpoints
-app.use('/api/posts', express.json({ limit: '50mb' }));
-app.use('/api/reels', express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const limiter = rateLimit({
@@ -408,7 +405,7 @@ app.post('/api/posts', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(mentions, userId, post._id.toString(), 'post');
+      await sendMentionNotifications(userId, mentions, 'post', post._id.toString(), io);
     }
 
     // Send tag notifications to tagged users
@@ -1129,7 +1126,7 @@ app.post('/api/reels', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(mentions, userId, reel._id.toString(), 'reel');
+      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString(), io);
     }
 
     // Send tag notifications to tagged users
@@ -1205,15 +1202,16 @@ app.get('/api/reels/:reelId/comments', async (req, res) => {
 app.post('/api/reels/:reelId/comments', async (req, res) => {
   try {
     const { reelId } = req.params;
-    const { userId, text, isAnonymous } = req.body;
-    if (!userId || !text) {
-      return res.status(400).json({ error: 'userId and text are required' });
+    const { userId, text, content, isAnonymous } = req.body;
+    const commentContent = content || text;
+    if (!userId || !commentContent) {
+      return res.status(400).json({ error: 'userId and comment content are required' });
     }
 
     const comment = await Comment.create({
       postId: reelId,
       userId,
-      content: text,
+      content: commentContent,
       isAnonymous: Boolean(isAnonymous),
     });
 
