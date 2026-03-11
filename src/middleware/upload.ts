@@ -1,26 +1,37 @@
 import multer from 'multer';
 import path from 'path';
+import { Request } from 'express';
 
 // Configure multer for memory storage
 const storage = multer.memoryStorage();
 
+// Allowed MIME types
+const ALLOWED_VIDEO_MIMES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'] as const;
+const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
+
 // File filter for videos
-const videoFilter = (req: any, file: any, cb: any) => {
-  const allowedMimes = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/webm'];
-  if (allowedMimes.includes(file.mimetype)) {
+const videoFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  if (ALLOWED_VIDEO_MIMES.includes(file.mimetype as any)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only video files are allowed.'), false);
+    cb(new Error('Invalid file type. Only video files (MP4, MOV, AVI, WebM) are allowed.'));
   }
 };
 
 // File filter for images
-const imageFilter = (req: any, file: any, cb: any) => {
-  const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  if (allowedMimes.includes(file.mimetype)) {
+const imageFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  if (ALLOWED_IMAGE_MIMES.includes(file.mimetype as any)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only image files are allowed.'), false);
+    cb(new Error('Invalid file type. Only image files (JPEG, PNG, GIF, WebP) are allowed.'));
   }
 };
 

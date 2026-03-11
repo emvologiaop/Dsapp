@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
 import { Reel } from '../models/Reel.js';
+import { isValidObjectId } from '../utils/validation.js';
 
 // Extend Express Request to include user
 declare global {
@@ -18,7 +19,16 @@ declare global {
 /**
  * Simple authentication middleware
  * Checks if userId is provided in request body or query
- * In a production app, this would verify a JWT token
+ *
+ * @remarks
+ * In a production app, this would verify a JWT token instead of accepting userId directly.
+ * This is a simplified implementation for demonstration purposes.
+ *
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
+ *
+ * @returns 401 if authentication fails, otherwise calls next()
  */
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
@@ -26,6 +36,11 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
     if (!userId) {
       return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Validate ObjectId format to prevent injection attacks
+    if (!isValidObjectId(userId as string)) {
+      return res.status(401).json({ error: 'Invalid user ID format' });
     }
 
     const user = await User.findById(userId);
@@ -37,7 +52,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       return res.status(403).json({ error: 'Your account has been banned', reason: user.banReason });
     }
 
-    req.userId = userId;
+    req.userId = userId as string;
     req.user = user;
     next();
   } catch (error) {
@@ -49,6 +64,12 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 /**
  * Authorization middleware to check if user is admin
  * Must be used after authenticate middleware
+ *
+ * @param req - Express request object (must have user set by authenticate)
+ * @param res - Express response object
+ * @param next - Express next function
+ *
+ * @returns 403 if user is not admin, otherwise calls next()
  */
 export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
   try {
@@ -70,6 +91,12 @@ export async function requireAdmin(req: Request, res: Response, next: NextFuncti
 /**
  * Authorization middleware to check if user owns a post
  * Must be used after authenticate middleware
+ *
+ * @param req - Express request object (must have user set by authenticate, postId in params)
+ * @param res - Express response object
+ * @param next - Express next function
+ *
+ * @returns 403 if user doesn't own the post, 404 if post not found, otherwise calls next()
  */
 export async function requirePostOwnership(req: Request, res: Response, next: NextFunction) {
   try {
@@ -78,6 +105,12 @@ export async function requirePostOwnership(req: Request, res: Response, next: Ne
     }
 
     const { postId } = req.params;
+
+    // Validate postId format
+    if (!isValidObjectId(postId)) {
+      return res.status(400).json({ error: 'Invalid post ID format' });
+    }
+
     const post = await Post.findById(postId);
 
     if (!post) {
@@ -99,6 +132,12 @@ export async function requirePostOwnership(req: Request, res: Response, next: Ne
 /**
  * Authorization middleware to check if user owns a reel
  * Must be used after authenticate middleware
+ *
+ * @param req - Express request object (must have user set by authenticate, reelId in params)
+ * @param res - Express response object
+ * @param next - Express next function
+ *
+ * @returns 403 if user doesn't own the reel, 404 if reel not found, otherwise calls next()
  */
 export async function requireReelOwnership(req: Request, res: Response, next: NextFunction) {
   try {
@@ -107,6 +146,12 @@ export async function requireReelOwnership(req: Request, res: Response, next: Ne
     }
 
     const { reelId } = req.params;
+
+    // Validate reelId format
+    if (!isValidObjectId(reelId)) {
+      return res.status(400).json({ error: 'Invalid reel ID format' });
+    }
+
     const reel = await Reel.findById(reelId);
 
     if (!reel) {

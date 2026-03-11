@@ -53,4 +53,11 @@ const ReelSchema = new Schema<IReel>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+ReelSchema.index({ userId: 1, createdAt: -1 }); // Compound index for user's reels sorted by date
+ReelSchema.index({ isDeleted: 1, createdAt: -1 }); // For filtering non-deleted reels
+ReelSchema.index({ createdAt: -1 }); // For recent reels feed (most important for infinite scroll)
+ReelSchema.index({ likedBy: 1 }); // For finding reels liked by a user
+ReelSchema.index({ duration: 1 }); // For filtering by video duration
+
 export const Reel = mongoose.model<IReel>('Reel', ReelSchema);

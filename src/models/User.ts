@@ -54,4 +54,12 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+UserSchema.index({ username: 1 }); // Already unique, but explicit for lookups
+UserSchema.index({ email: 1 }); // Already unique, but explicit for lookups
+UserSchema.index({ telegramChatId: 1 }); // For Telegram bot integration
+UserSchema.index({ role: 1 }); // For admin queries
+UserSchema.index({ isBanned: 1 }); // For filtering banned users
+UserSchema.index({ createdAt: -1 }); // For sorting by registration date
+
 export const User = mongoose.model<IUser>('User', UserSchema);

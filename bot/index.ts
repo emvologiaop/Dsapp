@@ -110,13 +110,19 @@ export function initBot(io?: any) {
       const now = new Date();
       const activeAds = await Ad.find({
         isActive: true,
-        $or: [
-          { startDate: { $exists: false } },
-          { startDate: { $lte: now } }
-        ],
-        $or: [
-          { endDate: { $exists: false } },
-          { endDate: { $gte: now } }
+        $and: [
+          {
+            $or: [
+              { startDate: { $exists: false } },
+              { startDate: { $lte: now } }
+            ]
+          },
+          {
+            $or: [
+              { endDate: { $exists: false } },
+              { endDate: { $gte: now } }
+            ]
+          }
         ]
       })
       .sort({ createdAt: -1 })
