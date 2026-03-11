@@ -55,6 +55,7 @@ const limiter = rateLimit({
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/api/telegram/webhook',
 });
 app.use(limiter);
 
