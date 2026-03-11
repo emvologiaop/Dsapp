@@ -6,10 +6,15 @@ import { Ad } from '../src/models/Ad.js';
 import { Notification } from '../src/models/Notification.js';
 import { Message } from '../src/models/Message.js';
 import { Post } from '../src/models/Post.js';
+import { connectDB } from '../src/db.js';
 
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
+const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api/telegram/webhook` : undefined);
+const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+const useWebhook = Boolean(webhookUrl);
 
 // Admin Configuration
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'Envologia01@gmail.com';
@@ -65,13 +70,39 @@ export function initBot(io?: any) {
     return null;
   }
 
-  const bot = new TelegramBot(token, { polling: true });
+  const bot = new TelegramBot(token, { polling: !useWebhook });
 
   // Log admin configuration on startup
   console.log("Telegram Bot initializing with admin config:");
   console.log(`  Admin Email: ${ADMIN_EMAIL}`);
   console.log(`  Admin Telegram: ${ADMIN_TELEGRAM_USERNAME}`);
   console.log(`  Admin User ID: ${ADMIN_TELEGRAM_USER_ID}`);
+
+  // Ensure DB connectivity and set webhook if configured
+  (async () => {
+    try {
+      await connectDB();
+      console.log('Telegram bot database connection ready');
+    } catch (error) {
+      console.error('Telegram bot database connection failed:', error);
+    }
+
+    if (useWebhook && webhookUrl) {
+      try {
+        await bot.setWebHook(webhookUrl, webhookSecret ? { secret_token: webhookSecret } : undefined);
+        console.log(`Telegram webhook set: ${webhookUrl}`);
+      } catch (error) {
+        console.error('Failed to set Telegram webhook:', error);
+      }
+    } else {
+      try {
+        await bot.deleteWebHook();
+        console.log('Telegram bot polling enabled');
+      } catch (error) {
+        console.error('Failed to clear Telegram webhook for polling:', error);
+      }
+    }
+  })();
 
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
