@@ -142,16 +142,15 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    const finalValue = name === 'username' ? value.toLowerCase() : value;
+    setFormData({ ...formData, [name]: finalValue });
     if (errors[name]) {
       const newErrors = { ...errors };
       delete newErrors[name];
       setErrors(newErrors);
     }
     if (name === 'username') {
-      const normalized = value.toLowerCase();
-      setFormData(prev => ({ ...prev, username: normalized }));
-      checkUsernameAvailability(normalized);
+      checkUsernameAvailability(finalValue);
     }
   };
 

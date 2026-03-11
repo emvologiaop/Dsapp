@@ -30,6 +30,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       });
       setAvatarPreview(null);
       setAvatarFile(null);
+      setUploadedAvatarUrl(null);
     }
   }, [user]);
 
@@ -61,8 +63,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     }
   };
 
-  const handleAvatarUpload = async () => {
-    if (!avatarFile || !user?.id) return;
+  const handleAvatarUpload = async (): Promise<string | null> => {
+    if (!avatarFile || !user?.id) return null;
     setUploadingAvatar(true);
     try {
       const formDataUpload = new FormData();
@@ -73,15 +75,18 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       });
       if (response.ok) {
         const data = await response.json();
-        onSave({ ...user, avatarUrl: data.avatarUrl });
         setAvatarFile(null);
+        setUploadedAvatarUrl(data.avatarUrl);
+        return data.avatarUrl;
       } else {
         const data = await response.json();
         setError(data.error || 'Failed to upload photo');
+        return null;
       }
     } catch (err) {
       console.error('Avatar upload error:', err);
       setError('Failed to upload photo');
+      return null;
     } finally {
       setUploadingAvatar(false);
     }
@@ -94,8 +99,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
     try {
       // Upload avatar first if changed
+      let newAvatarUrl: string | null = null;
       if (avatarFile) {
-        await handleAvatarUpload();
+        newAvatarUrl = await handleAvatarUpload();
       }
 
       const response = await fetch(`/api/users/${user.id}/profile`, {
@@ -109,6 +115,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
       if (response.ok) {
         const updatedUser = await response.json();
+        // Merge avatar URL if it was uploaded
+        if (newAvatarUrl) {
+          updatedUser.avatarUrl = newAvatarUrl;
+        }
         onSave(updatedUser);
         onClose();
       } else {

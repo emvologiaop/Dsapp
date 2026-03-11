@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Ghost, MessageCircle, CornerDownRight } from 'lucide-react';
+import { X, Send, Ghost, MessageCircle, CornerDownRight, Heart } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
 
 interface Comment {
@@ -8,7 +8,7 @@ interface Comment {
   content: string;
   isAnonymous: boolean;
   createdAt: string;
-  userId: { _id: string; name: string; username: string } | null;
+  userId: { _id: string; name: string; username: string; avatarUrl?: string } | null;
   parentCommentId?: string;
   replyCount: number;
 }
@@ -20,13 +20,25 @@ interface CommentsPanelProps {
   onClose: () => void;
 }
 
+const getTimeAgo = (dateStr: string): string => {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return 'now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d`;
+  return `${Math.floor(seconds / 604800)}w`;
+};
+
 export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, isAnonymous, onClose }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
   const [isPosting, setIsPosting] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
   const [replies, setReplies] = useState<Record<string, Comment[]>>({});
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchComments();
@@ -37,7 +49,6 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
       const res = await fetch(`/api/posts/${postId}/comments`);
       if (res.ok) {
         const data = await res.json();
-        // Filter to only show top-level comments (no parentCommentId)
         const topLevelComments = data.filter((c: Comment) => !c.parentCommentId);
         setComments(topLevelComments);
       }
@@ -64,7 +75,6 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
       newExpanded.delete(commentId);
     } else {
       newExpanded.add(commentId);
-      // Fetch replies if not already loaded
       if (!replies[commentId]) {
         fetchReplies(commentId);
       }
@@ -72,12 +82,17 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
     setExpandedReplies(newExpanded);
   };
 
+  const startReply = (commentId: string, commentAuthor: string) => {
+    setReplyingTo({ id: commentId, name: commentAuthor });
+    inputRef.current?.focus();
+  };
+
   const handleSubmit = async () => {
     if (!text.trim()) return;
     setIsPosting(true);
     try {
       const endpoint = replyingTo
-        ? `/api/comments/${replyingTo}/reply`
+        ? `/api/comments/${replyingTo.id}/reply`
         : `/api/posts/${postId}/comments`;
 
       const res = await fetch(endpoint, {
@@ -89,17 +104,14 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
       if (res.ok) {
         const newComment = await res.json();
         if (replyingTo) {
-          // Add reply to replies list
           setReplies(prev => ({
             ...prev,
-            [replyingTo]: [...(prev[replyingTo] || []), newComment]
+            [replyingTo.id]: [...(prev[replyingTo.id] || []), newComment]
           }));
-          // Update reply count
           setComments(prev => prev.map(c =>
-            c._id === replyingTo ? { ...c, replyCount: c.replyCount + 1 } : c
+            c._id === replyingTo.id ? { ...c, replyCount: c.replyCount + 1 } : c
           ));
-          // Expand replies to show the new reply
-          setExpandedReplies(prev => new Set(prev).add(replyingTo));
+          setExpandedReplies(prev => new Set(prev).add(replyingTo.id));
         } else {
           setComments((prev) => [newComment, ...prev]);
         }
@@ -135,42 +147,49 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {comments.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8 text-sm">No comments yet. Be the first!</p>
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <MessageCircle size={32} className="mb-3 opacity-30" />
+              <p className="text-sm">No comments yet. Be the first!</p>
+            </div>
           ) : (
             comments.map((comment) => (
               <div key={comment._id} className="space-y-2">
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-muted shrink-0 flex items-center justify-center text-xs font-bold">
-                    {comment.isAnonymous ? <Ghost size={14} className="text-muted-foreground" /> : (comment.userId?.name?.[0] || 'U')}
+                  <div className="w-8 h-8 rounded-full bg-muted shrink-0 flex items-center justify-center text-xs font-bold overflow-hidden">
+                    {comment.isAnonymous ? (
+                      <Ghost size={14} className="text-muted-foreground" />
+                    ) : comment.userId?.avatarUrl ? (
+                      <img src={comment.userId.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      comment.userId?.name?.[0] || 'U'
+                    )}
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-bold">
-                        {comment.isAnonymous ? 'Ghost' : (comment.userId?.name || 'User')}
+                    <p className="text-sm">
+                      <span className="font-semibold">
+                        {comment.isAnonymous ? 'Ghost' : (comment.userId?.username || 'user')}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(comment.createdAt).toLocaleDateString()}
+                      {' '}
+                      <span className="text-foreground">{comment.content}</span>
+                    </p>
+                    <div className="flex gap-4 mt-1.5">
+                      <span className="text-[11px] text-muted-foreground">
+                        {getTimeAgo(comment.createdAt)}
                       </span>
-                    </div>
-                    <p className="text-sm text-foreground mt-0.5">{comment.content}</p>
-
-                    {/* Reply and View Replies buttons */}
-                    <div className="flex gap-3 mt-2">
                       <button
-                        onClick={() => setReplyingTo(comment._id)}
-                        className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                        onClick={() => startReply(comment._id, comment.isAnonymous ? 'Ghost' : (comment.userId?.username || 'user'))}
+                        className="text-[11px] text-muted-foreground hover:text-foreground font-semibold transition-colors"
                       >
-                        <MessageCircle size={12} />
                         Reply
                       </button>
                       {comment.replyCount > 0 && (
                         <button
                           onClick={() => toggleReplies(comment._id)}
-                          className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                         >
-                          <CornerDownRight size={12} />
+                          <CornerDownRight size={10} />
                           {expandedReplies.has(comment._id) ? 'Hide' : 'View'} {comment.replyCount} {comment.replyCount === 1 ? 'reply' : 'replies'}
                         </button>
                       )}
@@ -180,22 +199,37 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
 
                 {/* Nested Replies */}
                 {expandedReplies.has(comment._id) && replies[comment._id] && (
-                  <div className="ml-11 space-y-2 pl-4 border-l-2 border-muted">
+                  <div className="ml-11 space-y-3 pl-3 border-l-2 border-muted">
                     {replies[comment._id].map((reply) => (
                       <div key={reply._id} className="flex gap-2">
-                        <div className="w-6 h-6 rounded-full bg-muted shrink-0 flex items-center justify-center text-[10px] font-bold">
-                          {reply.isAnonymous ? <Ghost size={10} className="text-muted-foreground" /> : (reply.userId?.name?.[0] || 'U')}
+                        <div className="w-6 h-6 rounded-full bg-muted shrink-0 flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                          {reply.isAnonymous ? (
+                            <Ghost size={10} className="text-muted-foreground" />
+                          ) : reply.userId?.avatarUrl ? (
+                            <img src={reply.userId.avatarUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            reply.userId?.name?.[0] || 'U'
+                          )}
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-xs font-bold">
-                              {reply.isAnonymous ? 'Ghost' : (reply.userId?.name || 'User')}
+                          <p className="text-xs">
+                            <span className="font-semibold">
+                              {reply.isAnonymous ? 'Ghost' : (reply.userId?.username || 'user')}
                             </span>
-                            <span className="text-[9px] text-muted-foreground">
-                              {new Date(reply.createdAt).toLocaleDateString()}
+                            {' '}
+                            <span className="text-foreground">{reply.content}</span>
+                          </p>
+                          <div className="flex gap-4 mt-1">
+                            <span className="text-[10px] text-muted-foreground">
+                              {getTimeAgo(reply.createdAt)}
                             </span>
+                            <button
+                              onClick={() => startReply(comment._id, reply.isAnonymous ? 'Ghost' : (reply.userId?.username || 'user'))}
+                              className="text-[10px] text-muted-foreground hover:text-foreground font-semibold transition-colors"
+                            >
+                              Reply
+                            </button>
                           </div>
-                          <p className="text-xs text-foreground mt-0.5">{reply.content}</p>
                         </div>
                       </div>
                     ))}
@@ -208,14 +242,13 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
 
         <div className="p-4 border-t border-border">
           {replyingTo && (
-            <div className="flex items-center justify-between text-xs text-muted-foreground mb-2 bg-muted/50 p-2 rounded-lg">
-              <span className="flex items-center gap-1">
-                <CornerDownRight size={12} />
-                Replying to comment
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-2 px-1">
+              <span>
+                Replying to <span className="font-semibold text-foreground">@{replyingTo.name}</span>
               </span>
               <button
                 onClick={() => setReplyingTo(null)}
-                className="text-primary hover:text-primary/80"
+                className="text-primary hover:text-primary/80 font-semibold"
               >
                 Cancel
               </button>
@@ -223,11 +256,12 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
           )}
           <div className="flex items-center gap-3 bg-muted rounded-xl p-2 pl-4">
             <input
+              ref={inputRef}
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
-              placeholder={isAnonymous ? 'Comment anonymously...' : 'Add a comment...'}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : isAnonymous ? 'Comment anonymously...' : 'Add a comment...'}
               className="flex-1 bg-transparent outline-none text-sm py-1"
             />
             <button
