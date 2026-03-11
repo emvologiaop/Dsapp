@@ -356,6 +356,9 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
             // Predictive preload triggered at 80% playback
             console.log('Preloading next videos...');
           }}
+          reelId={currentReel?._id}
+          userId={user?.id}
+          duration={currentReel?.duration}
           className="w-full h-full"
         />
 

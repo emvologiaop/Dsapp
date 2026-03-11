@@ -19,6 +19,9 @@ interface VideoPlayerProps {
   onTimeUpdate?: (currentTime: number) => void;
   className?: string;
   preloadNext?: () => void; // Callback to preload next video
+  reelId?: string; // For view tracking
+  userId?: string; // For view tracking
+  duration?: number; // Video duration for tracking
 }
 
 export function VideoPlayer({
@@ -32,21 +35,47 @@ export function VideoPlayer({
   onTimeUpdate,
   className = '',
   preloadNext,
+  reelId,
+  userId,
+  duration,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedQuality, setSelectedQuality] = useState<string>('720p');
+  const [selectedQuality, setSelectedQuality] = useState<string>('540p'); // Changed default to 540p
   const [currentVideoUrl, setCurrentVideoUrl] = useState<string>(videoUrl);
   const [bufferedRanges, setBufferedRanges] = useState<number>(0);
+  const [watchStartTime, setWatchStartTime] = useState<number>(0);
+  const [totalWatchTime, setTotalWatchTime] = useState<number>(0);
+  const viewRecordedRef = useRef<boolean>(false);
+
+  // Record video view
+  const recordView = async (watchDuration: number) => {
+    if (!reelId || !userId || !duration) return;
+
+    try {
+      await fetch(`/api/reels/${reelId}/view`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          watchDuration,
+          totalDuration: duration,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to record view:', error);
+    }
+  };
 
   // Select best quality based on available qualities
   useEffect(() => {
     if (videoQualities && videoQualities.length > 0) {
-      // Default to 720p if available, otherwise use first quality
-      const quality720 = videoQualities.find((q) => q.quality === '720p');
-      const selectedUrl = quality720?.url || videoQualities[0].url;
+      // Default to 540p if available, fallback to 360p or first quality
+      const quality540 = videoQualities.find((q) => q.quality === '540p');
+      const quality360 = videoQualities.find((q) => q.quality === '360p');
+      const selectedUrl = quality540?.url || quality360?.url || videoQualities[0].url;
       setCurrentVideoUrl(selectedUrl);
-      setSelectedQuality(quality720?.quality || videoQualities[0].quality);
+      setSelectedQuality(quality540?.quality || quality360?.quality || videoQualities[0].quality);
     } else {
       setCurrentVideoUrl(videoUrl);
     }
@@ -72,6 +101,21 @@ export function VideoPlayer({
     const handleTimeUpdate = () => {
       if (onTimeUpdate) {
         onTimeUpdate(video.currentTime);
+      }
+
+      // Track watch time
+      if (video.currentTime > watchStartTime) {
+        setTotalWatchTime(prev => prev + (video.currentTime - watchStartTime));
+      }
+      setWatchStartTime(video.currentTime);
+
+      // Record view when 50% watched (and not already recorded)
+      if (reelId && userId && duration && !viewRecordedRef.current) {
+        const watchPercentage = (video.currentTime / duration) * 100;
+        if (watchPercentage >= 50) {
+          recordView(video.currentTime);
+          viewRecordedRef.current = true;
+        }
       }
 
       // Predictive preloading: when 80% of video is played, preload next

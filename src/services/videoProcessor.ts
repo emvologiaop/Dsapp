@@ -16,7 +16,7 @@ export interface VideoProcessingResult {
 }
 
 /**
- * Generate thumbnail from video
+ * Generate thumbnail from video with optimized compression
  */
 export async function generateThumbnail(
   videoPath: string,
@@ -31,13 +31,16 @@ export async function generateThumbnail(
     const thumbnailFilename = `thumb-${Date.now()}.jpg`;
     const thumbnailPath = path.join(outputFolder, thumbnailFilename);
 
+    // Reduced size for free tier: 360x640 instead of 720x1280
+    // Higher compression with quality setting
     ffmpeg(videoPath)
       .screenshots({
         timestamps: ['00:00:01'],
         filename: thumbnailFilename,
         folder: outputFolder,
-        size: '720x1280',
+        size: '360x640',
       })
+      .outputOptions(['-q:v 5']) // JPEG quality 5 (higher number = lower quality, range 2-31)
       .on('end', () => resolve(thumbnailPath))
       .on('error', (err) => reject(err));
   });
@@ -68,11 +71,12 @@ export async function getVideoMetadata(videoPath: string): Promise<{
 }
 
 /**
- * Transcode video to multiple qualities
+ * Transcode video to multiple qualities with advanced compression
+ * Optimized for Cloudflare R2 free tier with two-pass encoding
  */
 export async function transcodeVideo(
   videoPath: string,
-  qualities: Array<{ name: string; width: number; height: number; bitrate: string }>,
+  qualities: Array<{ name: string; width: number; height: number; bitrate: string; crf: number }>,
   outputFolder: string = '/tmp/transcoded'
 ): Promise<Array<{ quality: string; path: string; width: number; height: number }>> {
   if (!fs.existsSync(outputFolder)) {
@@ -85,16 +89,56 @@ export async function transcodeVideo(
     const outputFilename = `${quality.name}-${Date.now()}.mp4`;
     const outputPath = path.join(outputFolder, outputFilename);
 
+    // Two-pass encoding for better compression
+    // Pass 1: Analyze video
     await new Promise<void>((resolve, reject) => {
       ffmpeg(videoPath)
         .size(`${quality.width}x${quality.height}`)
         .videoBitrate(quality.bitrate)
-        .audioBitrate('128k')
+        .audioBitrate('64k') // Reduced from 128k for free tier
+        .audioCodec('aac')
+        .videoCodec('libx264')
         .format('mp4')
         .outputOptions([
-          '-preset fast',
+          '-preset slow', // Better compression (was 'fast')
+          '-crf ' + quality.crf, // Constant Rate Factor for quality
           '-movflags +faststart', // Enable streaming
-          '-crf 23',
+          '-profile:v main', // Compatible with most devices
+          '-level 3.1',
+          '-pix_fmt yuv420p', // Compatible pixel format
+          '-g 48', // GOP size for better streaming
+          '-sc_threshold 0', // Disable scene change detection
+          '-b_strategy 2',
+          '-pass 1',
+          '-an', // No audio in first pass
+          '-f mp4'
+        ])
+        .output('/dev/null') // Discard output from pass 1
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run();
+    });
+
+    // Pass 2: Encode with analysis data
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(videoPath)
+        .size(`${quality.width}x${quality.height}`)
+        .videoBitrate(quality.bitrate)
+        .audioBitrate('64k')
+        .audioCodec('aac')
+        .videoCodec('libx264')
+        .format('mp4')
+        .outputOptions([
+          '-preset slow',
+          '-crf ' + quality.crf,
+          '-movflags +faststart',
+          '-profile:v main',
+          '-level 3.1',
+          '-pix_fmt yuv420p',
+          '-g 48',
+          '-sc_threshold 0',
+          '-b_strategy 2',
+          '-pass 2'
         ])
         .output(outputPath)
         .on('end', () => resolve())
@@ -115,6 +159,7 @@ export async function transcodeVideo(
 
 /**
  * Process video: generate thumbnail and transcode to multiple qualities
+ * Optimized for Cloudflare R2 free tier - uses lower quality settings and removes original upload
  */
 export async function processVideo(
   videoBuffer: Buffer,
@@ -133,29 +178,34 @@ export async function processVideo(
     // Get video metadata
     const metadata = await getVideoMetadata(tempVideoPath);
 
-    // Upload original video
-    const originalFilename_r2 = generateUniqueFilename(originalFilename, 'videos/original/');
-    const originalUrl = await uploadToR2(videoBuffer, originalFilename_r2, 'video/mp4', '');
+    // Enforce 60 second limit for free tier
+    if (metadata.duration > 60) {
+      throw new Error('Video duration exceeds 60 seconds. Please upload a shorter video.');
+    }
 
-    // Generate thumbnail
+    // Generate thumbnail with aggressive compression
     const thumbnailPath = await generateThumbnail(tempVideoPath);
     const thumbnailBuffer = fs.readFileSync(thumbnailPath);
     const thumbnailFilename = generateUniqueFilename('thumbnail.jpg', 'videos/thumbnails/');
     const thumbnailUrl = await uploadToR2(thumbnailBuffer, thumbnailFilename, 'image/jpeg', '');
 
-    // Transcode to multiple qualities
+    // Transcode to multiple qualities with optimized settings for free tier
     const qualities = [];
     const targetQualities = [
-      { name: '360p', width: 360, height: 640, bitrate: '500k' },
-      { name: '720p', width: 720, height: 1280, bitrate: '2500k' },
+      { name: '360p', width: 360, height: 640, bitrate: '400k', crf: 28 }, // Lower bitrate and higher CRF
+      { name: '540p', width: 540, height: 960, bitrate: '800k', crf: 26 }, // New mid-tier instead of 720p
     ];
 
-    // Only add 1080p if original is high enough resolution
-    if (metadata.height >= 1080) {
-      targetQualities.push({ name: '1080p', width: 1080, height: 1920, bitrate: '5000k' });
+    // Remove 1080p entirely for free tier - too expensive
+    // Only transcode to qualities the video can support
+    const filteredQualities = targetQualities.filter(q => metadata.height >= q.height);
+
+    // If no qualities match, use the lowest one
+    if (filteredQualities.length === 0) {
+      filteredQualities.push(targetQualities[0]);
     }
 
-    const transcodedVideos = await transcodeVideo(tempVideoPath, targetQualities);
+    const transcodedVideos = await transcodeVideo(tempVideoPath, filteredQualities);
 
     // Upload transcoded videos to R2
     for (const video of transcodedVideos) {
@@ -178,11 +228,15 @@ export async function processVideo(
     fs.unlinkSync(tempVideoPath);
     fs.unlinkSync(thumbnailPath);
 
+    // Use the first transcoded quality as the default URL
+    // Don't upload original to save storage on free tier
+    const originalUrl = qualities[0]?.url || '';
+
     return {
       thumbnail: thumbnailUrl,
       qualities,
       duration: metadata.duration,
-      originalUrl,
+      originalUrl, // Actually points to best quality, not original
     };
   } catch (error) {
     // Clean up on error
