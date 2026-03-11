@@ -36,6 +36,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '100kb' }));
 // Use higher limit only for upload endpoints
+app.use('/api/posts', express.json({ limit: '50mb' }));
 app.use('/api/reels', express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -349,11 +350,17 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl } = req.body;
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls } = req.body;
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
-    const post = await Post.create({ userId, content, isAnonymous: Boolean(isAnonymous), mediaUrl });
+    const post = await Post.create({
+      userId,
+      content,
+      isAnonymous: Boolean(isAnonymous),
+      mediaUrl,
+      mediaUrls: mediaUrls || []
+    });
     const populated = await Post.findById(post._id).populate('userId', 'name username avatarUrl').lean();
     res.status(201).json(populated);
   } catch (error) {
@@ -861,6 +868,98 @@ app.delete('/api/reels/:reelId/like', async (req, res) => {
     res.status(500).json({ error: 'Failed to unlike reel' });
   }
 });
+
+app.get('/api/reels/:reelId/comments', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const comments = await Comment.find({ postId: reelId })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+    res.json(comments);
+  } catch (error) {
+    console.error('GET /api/reels/:reelId/comments error:', error);
+    res.status(500).json({ error: 'Failed to fetch comments' });
+  }
+});
+
+app.post('/api/reels/:reelId/comments', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const { userId, text, isAnonymous } = req.body;
+    if (!userId || !text) {
+      return res.status(400).json({ error: 'userId and text are required' });
+    }
+
+    const comment = await Comment.create({
+      postId: reelId,
+      userId,
+      content: text,
+      isAnonymous: Boolean(isAnonymous),
+    });
+
+    await Reel.findByIdAndUpdate(reelId, { $inc: { commentsCount: 1 } });
+
+    if (comment) {
+      const populated = await Comment.findById(comment._id)
+        .populate('userId', 'name username avatarUrl')
+        .lean();
+
+      res.status(201).json(populated);
+    } else {
+      res.status(500).json({ error: 'Failed to create comment' });
+    }
+  } catch (error) {
+    console.error('POST /api/reels/:reelId/comments error:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+app.post('/api/reels/:reelId/share', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const { userId, targetUserIds } = req.body;
+    if (!userId || !targetUserIds || !Array.isArray(targetUserIds)) {
+      return res.status(400).json({ error: 'userId and targetUserIds array are required' });
+    }
+
+    const reel = await Reel.findById(reelId).populate('userId', 'name username');
+    if (!reel) {
+      return res.status(404).json({ error: 'Reel not found' });
+    }
+
+    for (const targetUserId of targetUserIds) {
+      await Share.create({
+        senderId: userId,
+        postId: reelId,
+        receiverId: targetUserId,
+      });
+
+      const sender = await User.findById(userId).lean();
+      if (sender) {
+        const notification = await Notification.create({
+          userId: targetUserId,
+          type: 'share',
+          content: `${sender.name} shared a reel with you`,
+          relatedUserId: userId,
+          relatedPostId: reelId,
+        });
+        io.to(`user_${targetUserId}`).emit('new_notification', {
+          ...notification.toObject(),
+          id: notification._id.toString(),
+        });
+      }
+    }
+
+    await Reel.findByIdAndUpdate(reelId, { $inc: { sharesCount: targetUserIds.length } });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('POST /api/reels/:reelId/share error:', error);
+    res.status(500).json({ error: 'Failed to share reel' });
+  }
+});
+
 
 // Serve React app for all other routes (SPA fallback)
 app.get('*', (_req, res) => {
