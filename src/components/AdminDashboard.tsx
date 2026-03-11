@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
-import { Users, FileText, Film, Shield, Search, X, AlertCircle, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone } from 'lucide-react';
+import { Users, FileText, Film, Shield, Search, X, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone, BadgeCheck, Wrench, Clock, XCircle } from 'lucide-react';
 import { AdManagement } from './AdManagement';
 
 interface AdminStats {
@@ -24,6 +24,8 @@ interface User {
   isBanned: boolean;
   bannedAt?: string;
   banReason?: string;
+  badgeType?: 'none' | 'blue' | 'gold';
+  isVerified?: boolean;
   createdAt: string;
 }
 
@@ -46,13 +48,27 @@ interface Reel {
   videoUrl: string;
 }
 
+interface VerificationRequest {
+  _id: string;
+  name: string;
+  username: string;
+  email: string;
+  avatarUrl?: string;
+  verificationStatus: string;
+  verificationRealName: string;
+  verificationPhotoUrl: string;
+  verificationNote?: string;
+  verificationRequestedAt: string;
+  badgeType?: string;
+}
+
 interface Props {
   userId: string;
   onClose: () => void;
 }
 
 export function AdminDashboard({ userId, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'reels' | 'ads'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'reels' | 'ads' | 'verification' | 'maintenance'>('stats');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -64,6 +80,24 @@ export function AdminDashboard({ userId, onClose }: Props) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  // Verification
+  const [verificationRequests, setVerificationRequests] = useState<VerificationRequest[]>([]);
+  const [verifPage, setVerifPage] = useState(1);
+  const [verifTotalPages, setVerifTotalPages] = useState(1);
+  const [verifFilter, setVerifFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [selectedVerifUser, setSelectedVerifUser] = useState<VerificationRequest | null>(null);
+  const [badgeToGrant, setBadgeToGrant] = useState<'blue' | 'gold'>('blue');
+
+  // Badge management (in users tab)
+  const [badgeUser, setBadgeUser] = useState<User | null>(null);
+  const [badgeType, setBadgeTypeState] = useState<'none' | 'blue' | 'gold'>('none');
+
+  // Maintenance
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('We are performing scheduled maintenance. We will be back shortly!');
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false);
+  const [maintenanceSaved, setMaintenanceSaved] = useState(false);
+
   useEffect(() => {
     if (activeTab === 'stats') {
       fetchStats();
@@ -73,8 +107,12 @@ export function AdminDashboard({ userId, onClose }: Props) {
       fetchPosts();
     } else if (activeTab === 'reels') {
       fetchReels();
+    } else if (activeTab === 'verification') {
+      fetchVerificationRequests();
+    } else if (activeTab === 'maintenance') {
+      fetchMaintenanceSettings();
     }
-  }, [activeTab, page, searchQuery]);
+  }, [activeTab, page, searchQuery, verifPage, verifFilter]);
 
   const fetchStats = async () => {
     try {
@@ -228,6 +266,100 @@ export function AdminDashboard({ userId, onClose }: Props) {
     }
   };
 
+  const fetchVerificationRequests = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/admin/verification-requests?userId=${userId}&page=${verifPage}&status=${verifFilter}`);
+      if (response.ok) {
+        const data = await response.json();
+        setVerificationRequests(data.requests);
+        setVerifTotalPages(data.pagination.pages);
+      }
+    } catch (error) {
+      console.error('Failed to fetch verification requests:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGrantBadge = async (targetUserId: string, badge: 'none' | 'blue' | 'gold', approve?: boolean) => {
+    try {
+      const response = await fetch(`/api/admin/users/${targetUserId}/badge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, badgeType: badge, approve }),
+      });
+      if (response.ok) {
+        fetchUsers();
+        fetchVerificationRequests();
+        setSelectedVerifUser(null);
+        setBadgeUser(null);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to update badge');
+      }
+    } catch (error) {
+      console.error('Failed to update badge:', error);
+      alert('Failed to update badge');
+    }
+  };
+
+  const handleRejectVerification = async (targetUserId: string) => {
+    try {
+      const response = await fetch(`/api/admin/users/${targetUserId}/badge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, badgeType: 'none', approve: false }),
+      });
+      if (response.ok) {
+        fetchVerificationRequests();
+        setSelectedVerifUser(null);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to reject verification');
+      }
+    } catch (error) {
+      console.error('Failed to reject verification:', error);
+      alert('Failed to reject verification');
+    }
+  };
+
+  const fetchMaintenanceSettings = async () => {
+    try {
+      const response = await fetch(`/api/admin/maintenance?userId=${userId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setMaintenanceMode(data.maintenanceMode);
+        setMaintenanceMessage(data.maintenanceMessage || '');
+      }
+    } catch (error) {
+      console.error('Failed to fetch maintenance settings:', error);
+    }
+  };
+
+  const handleSaveMaintenanceSettings = async () => {
+    setMaintenanceSaving(true);
+    setMaintenanceSaved(false);
+    try {
+      const response = await fetch(`/api/admin/maintenance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, maintenanceMode, maintenanceMessage }),
+      });
+      if (response.ok) {
+        setMaintenanceSaved(true);
+        setTimeout(() => setMaintenanceSaved(false), 3000);
+      } else {
+        alert('Failed to save maintenance settings');
+      }
+    } catch (error) {
+      console.error('Failed to save maintenance settings:', error);
+      alert('Failed to save maintenance settings');
+    } finally {
+      setMaintenanceSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
       {/* Header */}
@@ -252,6 +384,8 @@ export function AdminDashboard({ userId, onClose }: Props) {
             { id: 'posts', label: 'Posts', icon: FileText },
             { id: 'reels', label: 'Reels', icon: Film },
             { id: 'ads', label: 'Ads', icon: Megaphone },
+            { id: 'verification', label: 'Verification', icon: BadgeCheck },
+            { id: 'maintenance', label: 'Maintenance', icon: Wrench },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -406,7 +540,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   <FriendlyCard key={user._id} className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-bold">{user.name}</p>
                           {user.role === 'admin' && (
                             <span className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full font-medium">
@@ -418,6 +552,16 @@ export function AdminDashboard({ userId, onClose }: Props) {
                               Banned
                             </span>
                           )}
+                          {user.badgeType === 'gold' && (
+                            <span className="px-2 py-0.5 bg-yellow-400/20 text-yellow-600 text-xs rounded-full font-medium flex items-center gap-1">
+                              <BadgeCheck size={12} fill="currentColor" /> Gold
+                            </span>
+                          )}
+                          {user.badgeType === 'blue' && (
+                            <span className="px-2 py-0.5 bg-blue-500/20 text-blue-500 text-xs rounded-full font-medium flex items-center gap-1">
+                              <BadgeCheck size={12} fill="currentColor" /> Blue
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-muted-foreground">@{user.username}</p>
                         <p className="text-xs text-muted-foreground">{user.email}</p>
@@ -425,7 +569,15 @@ export function AdminDashboard({ userId, onClose }: Props) {
                           <p className="text-xs text-red-500 mt-1">Reason: {user.banReason}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        {/* Badge management button */}
+                        <button
+                          onClick={() => { setBadgeUser(user); setBadgeTypeState(user.badgeType || 'none'); }}
+                          className="px-3 py-1.5 bg-yellow-400/10 text-yellow-600 rounded-lg hover:bg-yellow-400/20 transition-colors flex items-center gap-1 text-sm"
+                        >
+                          <BadgeCheck size={14} />
+                          Badge
+                        </button>
                         {user.role !== 'admin' && (
                           <>
                             {user.isBanned ? (
@@ -609,7 +761,252 @@ export function AdminDashboard({ userId, onClose }: Props) {
         {activeTab === 'ads' && (
           <AdManagement userId={userId} />
         )}
+
+        {/* Verification Requests Tab */}
+        {activeTab === 'verification' && (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-bold">Verification Requests</h2>
+              <div className="flex gap-2">
+                {(['pending', 'approved', 'rejected'] as const).map(status => (
+                  <button
+                    key={status}
+                    onClick={() => { setVerifFilter(status); setVerifPage(1); }}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${verifFilter === status ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                  >
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="text-center py-20 text-muted-foreground">Loading...</div>
+            ) : verificationRequests.length === 0 ? (
+              <div className="text-center py-20 text-muted-foreground">No {verifFilter} verification requests.</div>
+            ) : (
+              <div className="space-y-4">
+                {verificationRequests.map(req => (
+                  <FriendlyCard key={req._id} className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4 flex-1 min-w-0">
+                        {req.avatarUrl ? (
+                          <img src={req.avatarUrl} alt={req.name} className="w-12 h-12 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center font-bold text-lg shrink-0">
+                            {req.name?.[0] || 'U'}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold">{req.name}</p>
+                            <p className="text-sm text-muted-foreground">@{req.username}</p>
+                            {req.verificationStatus === 'pending' && <span className="flex items-center gap-1 text-xs text-orange-500"><Clock size={12} /> Pending</span>}
+                            {req.verificationStatus === 'approved' && <span className="flex items-center gap-1 text-xs text-green-500"><CheckCircle size={12} /> Approved</span>}
+                            {req.verificationStatus === 'rejected' && <span className="flex items-center gap-1 text-xs text-red-500"><XCircle size={12} /> Rejected</span>}
+                            {req.badgeType === 'blue' && <span className="flex items-center gap-1 text-xs text-blue-500"><BadgeCheck size={12} fill="currentColor" /> Blue</span>}
+                            {req.badgeType === 'gold' && <span className="flex items-center gap-1 text-xs text-yellow-500"><BadgeCheck size={12} fill="currentColor" /> Gold</span>}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{req.email}</p>
+                          <p className="text-sm mt-1"><span className="font-medium">Real name:</span> {req.verificationRealName}</p>
+                          {req.verificationNote && (
+                            <p className="text-sm text-muted-foreground mt-0.5">{req.verificationNote}</p>
+                          )}
+                          {req.verificationPhotoUrl && (
+                            <a href={req.verificationPhotoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline mt-1 block">View submitted photo</a>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">Requested: {new Date(req.verificationRequestedAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                      {req.verificationStatus === 'pending' && (
+                        <button
+                          onClick={() => { setSelectedVerifUser(req); setBadgeToGrant('blue'); }}
+                          className="px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors text-sm shrink-0"
+                        >
+                          Review
+                        </button>
+                      )}
+                    </div>
+                  </FriendlyCard>
+                ))}
+              </div>
+            )}
+
+            {verifTotalPages > 1 && (
+              <div className="flex justify-center gap-2">
+                <button onClick={() => setVerifPage(p => Math.max(1, p - 1))} disabled={verifPage === 1} className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50">Previous</button>
+                <span className="px-4 py-2">Page {verifPage} of {verifTotalPages}</span>
+                <button onClick={() => setVerifPage(p => Math.min(verifTotalPages, p + 1))} disabled={verifPage === verifTotalPages} className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50">Next</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Maintenance Mode Tab */}
+        {activeTab === 'maintenance' && (
+          <div className="space-y-6 max-w-xl">
+            <div>
+              <h2 className="text-xl font-bold mb-1">Maintenance Mode</h2>
+              <p className="text-sm text-muted-foreground">When enabled, non-admin users see a maintenance screen instead of the app.</p>
+            </div>
+
+            <FriendlyCard className="p-6 space-y-5">
+              {/* Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold">Maintenance Mode</p>
+                  <p className="text-sm text-muted-foreground">Toggle to take the app down for maintenance</p>
+                </div>
+                <button
+                  onClick={() => setMaintenanceMode(prev => !prev)}
+                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors focus:outline-none ${maintenanceMode ? 'bg-red-500' : 'bg-muted'}`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${maintenanceMode ? 'translate-x-8' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+
+              {maintenanceMode && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <Wrench size={16} className="text-red-500 shrink-0" />
+                  <p className="text-sm text-red-500 font-medium">Maintenance mode is <strong>ACTIVE</strong>. Non-admin users are blocked from the app.</p>
+                </div>
+              )}
+
+              {/* Message */}
+              <div>
+                <label className="block text-sm font-semibold mb-2">Maintenance Message</label>
+                <textarea
+                  value={maintenanceMessage}
+                  onChange={e => setMaintenanceMessage(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                  placeholder="Enter the message to display to users during maintenance..."
+                />
+              </div>
+
+              <button
+                onClick={handleSaveMaintenanceSettings}
+                disabled={maintenanceSaving}
+                className="w-full px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {maintenanceSaving ? (
+                  <><span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full" />Saving...</>
+                ) : maintenanceSaved ? (
+                  <><CheckCircle size={16} />Settings Saved!</>
+                ) : (
+                  'Save Settings'
+                )}
+              </button>
+            </FriendlyCard>
+          </div>
+        )}
       </div>
+
+      {/* Badge Grant Modal (in Users tab) */}
+      {badgeUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <FriendlyCard className="max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Manage Badge</h3>
+              <button onClick={() => setBadgeUser(null)} className="p-1 hover:bg-muted rounded"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">User</p>
+                <p className="font-medium">{badgeUser.name} (@{badgeUser.username})</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Badge Type</label>
+                <div className="flex gap-2">
+                  {(['none', 'blue', 'gold'] as const).map(b => (
+                    <button
+                      key={b}
+                      onClick={() => setBadgeTypeState(b)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${badgeType === b ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'}`}
+                    >
+                      {b === 'none' ? '✕ None' : b === 'blue' ? '🔵 Blue' : '🟡 Gold'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setBadgeUser(null)} className="flex-1 px-4 py-2 bg-muted rounded-lg hover:bg-muted/80 transition-colors">Cancel</button>
+                <button
+                  onClick={() => handleGrantBadge(badgeUser._id, badgeType)}
+                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                >
+                  <BadgeCheck size={16} /> Apply Badge
+                </button>
+              </div>
+            </div>
+          </FriendlyCard>
+        </div>
+      )}
+
+      {/* Verification Review Modal */}
+      {selectedVerifUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <FriendlyCard className="max-w-lg w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Review Verification Request</h3>
+              <button onClick={() => setSelectedVerifUser(null)} className="p-1 hover:bg-muted rounded"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                {selectedVerifUser.avatarUrl ? (
+                  <img src={selectedVerifUser.avatarUrl} alt={selectedVerifUser.name} className="w-14 h-14 rounded-full object-cover" />
+                ) : (
+                  <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center font-bold text-xl">{selectedVerifUser.name?.[0] || 'U'}</div>
+                )}
+                <div>
+                  <p className="font-bold">{selectedVerifUser.name}</p>
+                  <p className="text-sm text-muted-foreground">@{selectedVerifUser.username}</p>
+                  <p className="text-xs text-muted-foreground">{selectedVerifUser.email}</p>
+                </div>
+              </div>
+              <div className="bg-muted rounded-lg p-4 space-y-2">
+                <p className="text-sm"><span className="font-semibold">Real Name:</span> {selectedVerifUser.verificationRealName}</p>
+                {selectedVerifUser.verificationNote && <p className="text-sm"><span className="font-semibold">Note:</span> {selectedVerifUser.verificationNote}</p>}
+                {selectedVerifUser.verificationPhotoUrl && (
+                  <div>
+                    <p className="text-sm font-semibold mb-1">Submitted Photo:</p>
+                    <img src={selectedVerifUser.verificationPhotoUrl} alt="Verification photo" className="w-full max-h-48 object-cover rounded-lg border border-border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <a href={selectedVerifUser.verificationPhotoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline mt-1 block">Open in new tab</a>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-2">Badge to Grant</label>
+                <div className="flex gap-2">
+                  <button onClick={() => setBadgeToGrant('blue')} className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm border transition-colors ${badgeToGrant === 'blue' ? 'bg-blue-500 text-white border-blue-500' : 'bg-muted border-border hover:bg-muted/80'}`}>
+                    🔵 Blue Badge
+                  </button>
+                  <button onClick={() => setBadgeToGrant('gold')} className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm border transition-colors ${badgeToGrant === 'gold' ? 'bg-yellow-400 text-black border-yellow-400' : 'bg-muted border-border hover:bg-muted/80'}`}>
+                    🟡 Gold Badge
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Blue = personal verified account · Gold = academic/organization/notable</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleRejectVerification(selectedVerifUser._id)}
+                  className="flex-1 px-4 py-2 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors flex items-center justify-center gap-2"
+                >
+                  <XCircle size={16} /> Reject
+                </button>
+                <button
+                  onClick={() => handleGrantBadge(selectedVerifUser._id, badgeToGrant, true)}
+                  className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <BadgeCheck size={16} /> Approve & Grant Badge
+                </button>
+              </div>
+            </div>
+          </FriendlyCard>
+        </div>
+      )}
 
       {/* Ban User Modal */}
       {selectedUser && (

@@ -20,6 +20,7 @@ import { VideoView } from './src/models/VideoView.js';
 import { Ad } from './src/models/Ad.js';
 import { Report } from './src/models/Report.js';
 import { Story } from './src/models/Story.js';
+import { SystemSettings } from './src/models/SystemSettings.js';
 import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
@@ -2245,6 +2246,153 @@ app.get('/api/admin/ads/stats/summary', authenticate, requireAdmin, async (req, 
   } catch (error) {
     console.error('GET /api/admin/ads/stats/summary error:', error);
     res.status(500).json({ error: 'Failed to fetch ad statistics' });
+  }
+});
+
+// ── Badge & Verification Routes ───────────────────────────────────────────────
+
+// Get maintenance status (public)
+app.get('/api/system/maintenance', async (_req, res) => {
+  try {
+    const settings = await SystemSettings.findOne();
+    res.json({
+      maintenanceMode: settings?.maintenanceMode ?? false,
+      maintenanceMessage: settings?.maintenanceMessage ?? 'We are performing scheduled maintenance. We will be back shortly!',
+    });
+  } catch (error) {
+    console.error('GET /api/system/maintenance error:', error);
+    res.status(500).json({ error: 'Failed to fetch maintenance status' });
+  }
+});
+
+// Get/set maintenance mode (admin only)
+app.get('/api/admin/maintenance', authenticate, requireAdmin, async (_req, res) => {
+  try {
+    let settings = await SystemSettings.findOne();
+    if (!settings) {
+      settings = await SystemSettings.create({ maintenanceMode: false, maintenanceMessage: 'We are performing scheduled maintenance. We will be back shortly!' });
+    }
+    res.json(settings);
+  } catch (error) {
+    console.error('GET /api/admin/maintenance error:', error);
+    res.status(500).json({ error: 'Failed to fetch maintenance settings' });
+  }
+});
+
+app.post('/api/admin/maintenance', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { maintenanceMode, maintenanceMessage } = req.body;
+    let settings = await SystemSettings.findOne();
+    if (!settings) {
+      settings = new SystemSettings({});
+    }
+    if (typeof maintenanceMode === 'boolean') settings.maintenanceMode = maintenanceMode;
+    if (typeof maintenanceMessage === 'string' && maintenanceMessage.trim()) settings.maintenanceMessage = maintenanceMessage;
+    settings.updatedBy = req.user._id;
+    await settings.save();
+    res.json(settings);
+  } catch (error) {
+    console.error('POST /api/admin/maintenance error:', error);
+    res.status(500).json({ error: 'Failed to update maintenance settings' });
+  }
+});
+
+// Submit verification request (user)
+app.post('/api/users/:targetUserId/verification-request', authenticate, async (req, res) => {
+  try {
+    const { targetUserId } = req.params;
+    if (req.userId !== targetUserId) {
+      return res.status(403).json({ error: 'You can only submit a verification request for yourself' });
+    }
+    const { realName, photoUrl, note } = req.body;
+    if (!realName || !realName.trim()) {
+      return res.status(400).json({ error: 'Real name is required' });
+    }
+    if (!photoUrl || !photoUrl.trim()) {
+      return res.status(400).json({ error: 'Photo URL is required for verification' });
+    }
+
+    const user = await User.findById(targetUserId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.verificationStatus === 'pending') {
+      return res.status(400).json({ error: 'You already have a pending verification request' });
+    }
+    if (user.verificationStatus === 'approved') {
+      return res.status(400).json({ error: 'Your account is already verified' });
+    }
+
+    user.verificationStatus = 'pending';
+    user.verificationRealName = realName.trim();
+    user.verificationPhotoUrl = photoUrl.trim();
+    user.verificationNote = note?.trim() || '';
+    user.verificationRequestedAt = new Date();
+    await user.save();
+
+    res.json({ success: true, message: 'Verification request submitted. An admin will review it shortly.' });
+  } catch (error) {
+    console.error('POST /api/users/:userId/verification-request error:', error);
+    res.status(500).json({ error: 'Failed to submit verification request' });
+  }
+});
+
+// Get pending verification requests (admin only)
+app.get('/api/admin/verification-requests', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const status = (req.query.status as string) || 'pending';
+    const skip = (page - 1) * limit;
+
+    const [requests, total] = await Promise.all([
+      User.find({ verificationStatus: status })
+        .select('name username email avatarUrl verificationStatus verificationRealName verificationPhotoUrl verificationNote verificationRequestedAt badgeType')
+        .sort({ verificationRequestedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments({ verificationStatus: status }),
+    ]);
+
+    res.json({ requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (error) {
+    console.error('GET /api/admin/verification-requests error:', error);
+    res.status(500).json({ error: 'Failed to fetch verification requests' });
+  }
+});
+
+// Grant/revoke badge (admin only)
+app.post('/api/admin/users/:targetUserId/badge', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { targetUserId } = req.params;
+    const { badgeType, approve } = req.body; // badgeType: 'none'|'blue'|'gold', approve: boolean
+
+    const user = await User.findById(targetUserId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const badge = badgeType as 'none' | 'blue' | 'gold';
+    if (!['none', 'blue', 'gold'].includes(badge)) {
+      return res.status(400).json({ error: 'Invalid badge type. Must be none, blue, or gold' });
+    }
+
+    user.badgeType = badge;
+    user.isVerified = badge !== 'none';
+
+    if (approve === true || badge !== 'none') {
+      user.verificationStatus = 'approved';
+      user.verificationReviewedAt = new Date();
+      user.verificationReviewedBy = req.user._id;
+    } else if (approve === false) {
+      user.verificationStatus = 'rejected';
+      user.verificationReviewedAt = new Date();
+      user.verificationReviewedBy = req.user._id;
+    }
+
+    await user.save();
+
+    res.json({ success: true, user: { id: user._id, badgeType: user.badgeType, isVerified: user.isVerified, verificationStatus: user.verificationStatus } });
+  } catch (error) {
+    console.error('POST /api/admin/users/:userId/badge error:', error);
+    res.status(500).json({ error: 'Failed to update badge' });
   }
 });
 
