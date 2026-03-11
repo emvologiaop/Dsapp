@@ -98,6 +98,10 @@ describe('Input Validation and Sanitization', () => {
       expect(output.length).toBe(50);
     });
 
+    it('should return empty string for whitespace-only input', () => {
+      expect(sanitizeContent('   ')).toBe('');
+    });
+
     it('should handle empty strings', () => {
       expect(sanitizeContent('')).toBe('');
     });

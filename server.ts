@@ -18,6 +18,7 @@ import { Comment } from './src/models/Comment.js';
 import { Reel } from './src/models/Reel.js';
 import { VideoView } from './src/models/VideoView.js';
 import { Ad } from './src/models/Ad.js';
+import { sanitizeContent, sanitizeText, isValidEmail, isValidUsername, isValidPassword, isValidObjectId } from './src/utils/validation.js';
 import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
@@ -106,6 +107,47 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
       else resolve(crypto.timingSafeEqual(Buffer.from(hash, 'hex'), derivedKey));
     });
   });
+}
+
+function normalizeContent(content: string) {
+  return sanitizeContent(content || '').trim();
+}
+
+function normalizeMediaUrls(mediaUrls: any, fallback?: string) {
+  const urls = Array.isArray(mediaUrls) ? mediaUrls : fallback ? [fallback] : [];
+  return urls
+    .filter((url) => typeof url === 'string')
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+async function ensureActiveUser(userId: string | undefined, res: express.Response) {
+  if (!userId || typeof userId !== 'string' || !isValidObjectId(userId)) {
+    res.status(400).json({ error: 'Invalid userId' });
+    return null;
+  }
+
+  const user = await User.findById(userId).lean();
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return null;
+  }
+
+  if (user.isBanned) {
+    res.status(403).json({ error: 'Your account has been banned', reason: user.banReason });
+    return null;
+  }
+
+  return user;
+}
+
+function validateObjectIdParam(id: string, label: string, res: express.Response) {
+  if (!isValidObjectId(id)) {
+    res.status(400).json({ error: `Invalid ${label}` });
+    return false;
+  }
+  return true;
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
@@ -279,22 +321,49 @@ io.on('connection', (socket) => {
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { name, username, email, password, age, gender, department } = req.body;
-    if (!name || !username || !email || !password) {
+    const cleanedName = sanitizeText(name || '').trim();
+    const cleanedUsername = sanitizeText(username || '').trim().toLowerCase();
+    const cleanedEmail = sanitizeText(email || '').trim().toLowerCase();
+    const cleanedDepartment = department ? sanitizeText(department).trim() : undefined;
+
+    if (!cleanedName || !cleanedUsername || !cleanedEmail || !password) {
       return res.status(400).json({ error: 'Name, username, email and password are required' });
     }
-    const existing = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+
+    if (!isValidEmail(cleanedEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    if (!isValidUsername(cleanedUsername)) {
+      return res.status(400).json({ error: 'Username must be 3-20 characters and use letters, numbers, "_" or "-"' });
+    }
+
+    if (!isValidPassword(password)) {
+      return res.status(400).json({ error: 'Password must include uppercase, lowercase and a number' });
+    }
+
+    if (gender && !['male', 'female', 'other'].includes(gender)) {
+      return res.status(400).json({ error: 'Invalid gender' });
+    }
+
+    const numericAge = age ? Number(age) : undefined;
+    if (age && (Number.isNaN(numericAge) || numericAge <= 0)) {
+      return res.status(400).json({ error: 'Invalid age value' });
+    }
+
+    const existing = await User.findOne({ $or: [{ email: cleanedEmail }, { username: cleanedUsername }] });
     if (existing) {
       return res.status(409).json({ error: 'Email or username already in use' });
     }
     const telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
     const user = await User.create({
-      name,
-      username: username.toLowerCase(),
-      email: email.toLowerCase(),
+      name: cleanedName,
+      username: cleanedUsername,
+      email: cleanedEmail,
       password: await hashPassword(password),
-      age: age ? Number(age) : undefined,
+      age: numericAge,
       gender,
-      department,
+      department: cleanedDepartment,
       telegramAuthCode,
     });
     res.status(201).json({
@@ -316,13 +385,25 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
+    const cleanedEmail = sanitizeText(email || '').trim().toLowerCase();
+
+    if (!cleanedEmail || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!isValidEmail(cleanedEmail)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    const user = await User.findOne({ email: cleanedEmail });
     if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    if (user.isBanned) {
+      return res.status(403).json({ error: 'Your account has been banned', reason: user.banReason });
+    }
+
     res.json({
       user: {
         id: user._id.toString(),
@@ -354,7 +435,11 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
 
 app.get('/api/posts', async (req, res) => {
   try {
-    const { userId } = req.query;
+    const rawUserId = Array.isArray(req.query.userId) ? req.query.userId[0] : req.query.userId;
+    if (rawUserId && !isValidObjectId(rawUserId)) {
+      return res.status(400).json({ error: 'Invalid userId' });
+    }
+
     const posts = await Post.find({ isDeleted: { $ne: true } })
       .sort({ createdAt: -1 })
       .limit(50)
@@ -362,8 +447,8 @@ app.get('/api/posts', async (req, res) => {
       .lean();
 
     let followingSet = new Set<string>();
-    if (userId) {
-      const currentUser = await User.findById(userId).lean();
+    if (rawUserId) {
+      const currentUser = await User.findById(rawUserId).lean();
       if (currentUser) {
         followingSet = new Set(currentUser.followingIds.map((id) => id.toString()));
       }
@@ -372,8 +457,8 @@ app.get('/api/posts', async (req, res) => {
     const enriched = posts.map((post: any) => ({
       ...post,
       likesCount: post.likedBy.length,
-      isLiked: userId ? post.likedBy.some((id: any) => id.toString() === userId.toString()) : false,
-      isBookmarked: userId ? post.bookmarkedBy.some((id: any) => id.toString() === userId.toString()) : false,
+      isLiked: rawUserId ? post.likedBy.some((id: any) => id.toString() === rawUserId.toString()) : false,
+      isBookmarked: rawUserId ? post.bookmarkedBy.some((id: any) => id.toString() === rawUserId.toString()) : false,
       isFollowing: post.userId ? followingSet.has(post.userId._id.toString()) : false,
     }));
 
@@ -387,15 +472,23 @@ app.get('/api/posts', async (req, res) => {
 app.post('/api/posts', async (req, res) => {
   try {
     const { userId, content, isAnonymous, mediaUrl, mediaUrls } = req.body;
-    if (!userId || !content) {
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    const sanitizedContent = normalizeContent(content);
+    if (!sanitizedContent) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
+
+    const normalizedMedia = normalizeMediaUrls(mediaUrls, mediaUrl);
+    const primaryMediaUrl = normalizedMedia[0];
+
     const post = await Post.create({
       userId,
-      content,
+      content: sanitizedContent,
       isAnonymous: Boolean(isAnonymous),
-      mediaUrl,
-      mediaUrls: mediaUrls || []
+      mediaUrl: primaryMediaUrl,
+      mediaUrls: normalizedMedia
     });
     const populated = await Post.findById(post._id).populate('userId', 'name username avatarUrl').lean();
     res.status(201).json(populated);
@@ -409,21 +502,28 @@ app.post('/api/posts/:postId/like', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    const post = await Post.findByIdAndUpdate(postId, { $addToSet: { likedBy: userId } }, { new: true }).populate('userId', 'name');
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const post = await Post.findOneAndUpdate(
+      { _id: postId, isDeleted: { $ne: true } },
+      { $addToSet: { likedBy: userId } },
+      { new: true }
+    ).populate('userId', 'name username');
+
     if (!post) return res.status(404).json({ error: 'Post not found' });
 
     if (!post.isAnonymous && post.userId && (post.userId as any)._id.toString() !== userId) {
-      const liker = await User.findById(userId).lean();
-      if (liker) {
-        const notification = await Notification.create({
-          userId: (post.userId as any)._id,
-          type: 'like',
-          content: `${liker.name} liked your post`,
-          relatedUserId: userId,
-          relatedPostId: postId,
-        });
-        io.to(`user_${(post.userId as any)._id.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
-      }
+      const notification = await Notification.create({
+        userId: (post.userId as any)._id,
+        type: 'like',
+        content: `${user.name} liked your post`,
+        relatedUserId: userId,
+        relatedPostId: postId,
+      });
+      io.to(`user_${(post.userId as any)._id.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
     }
     res.json({ postId, userId, liked: true, likesCount: post.likedBy.length });
   } catch (error) {
@@ -436,7 +536,17 @@ app.delete('/api/posts/:postId/like', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    const post = await Post.findByIdAndUpdate(postId, { $pull: { likedBy: userId } }, { new: true });
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const post = await Post.findOneAndUpdate(
+      { _id: postId, isDeleted: { $ne: true } },
+      { $pull: { likedBy: userId } },
+      { new: true }
+    );
+
     if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json({ postId, userId, liked: false, likesCount: post.likedBy.length });
   } catch (error) {
@@ -449,7 +559,18 @@ app.post('/api/posts/:postId/bookmark', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    await Post.findByIdAndUpdate(postId, { $addToSet: { bookmarkedBy: userId } });
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const post = await Post.findOneAndUpdate(
+      { _id: postId, isDeleted: { $ne: true } },
+      { $addToSet: { bookmarkedBy: userId } },
+      { new: true }
+    );
+
+    if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json({ postId, userId, bookmarked: true });
   } catch (error) {
     console.error('POST /api/posts/:postId/bookmark error:', error);
@@ -461,7 +582,18 @@ app.delete('/api/posts/:postId/bookmark', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId } = req.body;
-    await Post.findByIdAndUpdate(postId, { $pull: { bookmarkedBy: userId } });
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const post = await Post.findOneAndUpdate(
+      { _id: postId, isDeleted: { $ne: true } },
+      { $pull: { bookmarkedBy: userId } },
+      { new: true }
+    );
+
+    if (!post) return res.status(404).json({ error: 'Post not found' });
     res.json({ postId, userId, bookmarked: false });
   } catch (error) {
     console.error('DELETE /api/posts/:postId/bookmark error:', error);
@@ -473,27 +605,42 @@ app.post('/api/posts/:postId/share', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId, receiverIds } = req.body;
-    if (!Array.isArray(receiverIds) || receiverIds.length === 0) {
-      return res.status(400).json({ error: 'receiverIds is required' });
+    const sender = await ensureActiveUser(userId, res);
+    if (!sender) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const sanitizedReceiverIds = Array.isArray(receiverIds)
+      ? Array.from(new Set(receiverIds.filter((id: string) => typeof id === 'string' && isValidObjectId(id))))
+      : [];
+
+    if (sanitizedReceiverIds.length === 0) {
+      return res.status(400).json({ error: 'receiverIds must include at least one valid user id' });
     }
-    const sender = await User.findById(userId).lean();
-    if (!sender) return res.status(404).json({ error: 'User not found' });
 
-    const shares = receiverIds.map((receiverId: string) => ({ postId, senderId: userId, receiverId }));
+    const post = await Post.findOne({ _id: postId, isDeleted: { $ne: true } }).lean();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const receivers = await User.find({ _id: { $in: sanitizedReceiverIds }, isBanned: { $ne: true } }).lean();
+    if (receivers.length !== sanitizedReceiverIds.length) {
+      return res.status(404).json({ error: 'One or more recipients are invalid or unavailable' });
+    }
+
+    const shares = sanitizedReceiverIds.map((receiverId: string) => ({ postId, senderId: userId, receiverId }));
     await Share.insertMany(shares);
-    await Post.findByIdAndUpdate(postId, { $inc: { sharesCount: receiverIds.length } });
+    await Post.findByIdAndUpdate(postId, { $inc: { sharesCount: sanitizedReceiverIds.length } });
 
-    for (const receiverId of receiverIds) {
+    for (const receiver of receivers) {
       const notification = await Notification.create({
-        userId: receiverId,
+        userId: receiver._id,
         type: 'share',
         content: `${sender.name} shared a post with you`,
         relatedUserId: userId,
         relatedPostId: postId,
       });
-      io.to(`user_${receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+      io.to(`user_${receiver._id.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
     }
-    res.json({ postId, userId, receiverIds, shared: true });
+    res.json({ postId, userId, receiverIds: sanitizedReceiverIds, shared: true });
   } catch (error) {
     console.error('POST /api/posts/:postId/share error:', error);
     res.status(500).json({ error: 'Failed to share post' });
@@ -503,6 +650,8 @@ app.post('/api/posts/:postId/share', async (req, res) => {
 app.get('/api/posts/:postId/comments', async (req, res) => {
   try {
     const { postId } = req.params;
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
     const comments = await Comment.find({ postId })
       .sort({ createdAt: -1 })
       .populate('userId', 'name username avatarUrl')
@@ -518,26 +667,32 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
   try {
     const { postId } = req.params;
     const { userId, content, isAnonymous } = req.body;
-    if (!userId || !content) {
+    const user = await ensureActiveUser(userId, res);
+    if (!user) return;
+
+    if (!validateObjectIdParam(postId, 'postId', res)) return;
+
+    const sanitizedContent = normalizeContent(content);
+    if (!sanitizedContent) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
-    const comment = await Comment.create({ postId, userId, content, isAnonymous: Boolean(isAnonymous) });
+
+    const post = await Post.findOne({ _id: postId, isDeleted: { $ne: true } }).lean();
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const comment = await Comment.create({ postId, userId, content: sanitizedContent, isAnonymous: Boolean(isAnonymous) });
     await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
     const populated = await Comment.findById(comment._id).populate('userId', 'name username avatarUrl').lean();
 
-    const post = await Post.findById(postId).lean();
-    if (post && !post.isAnonymous && post.userId.toString() !== userId) {
-      const commenter = await User.findById(userId).lean();
-      if (commenter) {
-        const notification = await Notification.create({
-          userId: post.userId,
-          type: 'comment',
-          content: `${commenter.name} commented on your post`,
-          relatedUserId: userId,
-          relatedPostId: postId,
-        });
-        io.to(`user_${post.userId.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
-      }
+    if (!post.isAnonymous && post.userId.toString() !== userId) {
+      const notification = await Notification.create({
+        userId: post.userId,
+        type: 'comment',
+        content: `${user.name} commented on your post`,
+        relatedUserId: userId,
+        relatedPostId: postId,
+      });
+      io.to(`user_${post.userId.toString()}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
     }
     res.status(201).json(populated);
   } catch (error) {
