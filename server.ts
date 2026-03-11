@@ -359,6 +359,7 @@ app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
     const posts = await Post.find({ isDeleted: { $ne: true } })
+      .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers')
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('userId', 'name username avatarUrl')
@@ -409,27 +410,29 @@ app.post('/api/posts', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(mentions, userId, post._id.toString(), 'post');
+      await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
     }
 
     // Send tag notifications to tagged users
     if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
       const tagger = await User.findById(userId).lean();
       if (tagger) {
-        for (const taggedUserId of taggedUsers) {
-          if (taggedUserId !== userId) {
-            const notification = await Notification.create({
-              userId: taggedUserId,
-              type: 'tag',
-              content: `${tagger.name} tagged you in a post`,
-              relatedUserId: userId,
-              relatedPostId: post._id,
+        const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
+        if (filteredTaggedUsers.length > 0) {
+          const tagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
+            userId: taggedUserId,
+            type: 'tag',
+            content: `${tagger.name} tagged you in a post`,
+            relatedUserId: userId,
+            relatedPostId: post._id,
+          }));
+          const createdTagNotifications = await Notification.insertMany(tagNotifications);
+          createdTagNotifications.forEach((notif, idx) => {
+            io.to(`user_${filteredTaggedUsers[idx]}`).emit('new_notification', {
+              ...notif.toObject(),
+              id: notif._id.toString(),
             });
-            io.to(`user_${taggedUserId}`).emit('new_notification', {
-              ...notification.toObject(),
-              id: notification._id.toString(),
-            });
-          }
+          });
         }
       }
     }
@@ -520,16 +523,17 @@ app.post('/api/posts/:postId/share', async (req, res) => {
     await Share.insertMany(shares);
     await Post.findByIdAndUpdate(postId, { $inc: { sharesCount: receiverIds.length } });
 
-    for (const receiverId of receiverIds) {
-      const notification = await Notification.create({
-        userId: receiverId,
-        type: 'share',
-        content: `${sender.name} shared a post with you`,
-        relatedUserId: userId,
-        relatedPostId: postId,
-      });
-      io.to(`user_${receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
-    }
+    const shareNotifications = receiverIds.map((receiverId: string) => ({
+      userId: receiverId,
+      type: 'share',
+      content: `${sender.name} shared a post with you`,
+      relatedUserId: userId,
+      relatedPostId: postId,
+    }));
+    const createdShareNotifications = await Notification.insertMany(shareNotifications);
+    createdShareNotifications.forEach((notif, idx) => {
+      io.to(`user_${receiverIds[idx]}`).emit('new_notification', { ...notif.toObject(), id: notif._id.toString() });
+    });
     res.json({ postId, userId, receiverIds, shared: true });
   } catch (error) {
     console.error('POST /api/posts/:postId/share error:', error);
@@ -542,6 +546,7 @@ app.get('/api/posts/:postId/comments', async (req, res) => {
     const { postId } = req.params;
     const comments = await Comment.find({ postId })
       .sort({ createdAt: -1 })
+      .limit(100)
       .populate('userId', 'name username avatarUrl')
       .lean();
     res.json(comments);
@@ -591,6 +596,7 @@ app.get('/api/comments/:commentId/replies', async (req, res) => {
     const { commentId } = req.params;
     const replies = await Comment.find({ parentCommentId: commentId })
       .sort({ createdAt: 1 })
+      .limit(100)
       .populate('userId', 'name username avatarUrl')
       .lean();
     res.json(replies);
@@ -826,7 +832,11 @@ app.get('/api/users/:userId/inbox', async (req, res) => {
     const shares = await Share.find({ receiverId: userId })
       .sort({ createdAt: -1 })
       .populate('senderId', 'name username avatarUrl')
-      .populate({ path: 'postId', populate: { path: 'userId', select: 'name username avatarUrl' } })
+      .populate({
+        path: 'postId',
+        select: 'content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt userId isAnonymous',
+        populate: { path: 'userId', select: 'name username avatarUrl' },
+      })
       .lean();
 
     const result = shares.map((share: any) => ({
@@ -932,12 +942,21 @@ app.put('/api/users/:userId/profile', async (req, res) => {
 app.get('/api/users/:userId/posts', async (req, res) => {
   try {
     const { userId } = req.params;
-    const posts = await Post.find({ userId, isAnonymous: false })
-      .sort({ createdAt: -1 })
-      .populate('userId', 'name username avatarUrl')
-      .lean();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    res.json(posts);
+    const [posts, total] = await Promise.all([
+      Post.find({ userId, isAnonymous: false })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('userId', 'name username avatarUrl')
+        .lean(),
+      Post.countDocuments({ userId, isAnonymous: false }),
+    ]);
+
+    res.json({ posts, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (error) {
     console.error('GET /api/users/:userId/posts error:', error);
     res.status(500).json({ error: 'Failed to fetch posts' });
@@ -947,11 +966,20 @@ app.get('/api/users/:userId/posts', async (req, res) => {
 app.get('/api/users/:userId/reels', async (req, res) => {
   try {
     const { userId } = req.params;
-    const reels = await Reel.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    res.json(reels);
+    const [reels, total] = await Promise.all([
+      Reel.find({ userId, isDeleted: { $ne: true } })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Reel.countDocuments({ userId, isDeleted: { $ne: true } }),
+    ]);
+
+    res.json({ reels, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (error) {
     console.error('GET /api/users/:userId/reels error:', error);
     res.status(500).json({ error: 'Failed to fetch reels' });
@@ -962,6 +990,7 @@ app.get('/api/users/:userId/chats', async (req, res) => {
   try {
     const { userId } = req.params;
     const messages = await Message.find({ $or: [{ senderId: userId }, { receiverId: userId }] })
+      .select('senderId receiverId text createdAt')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -1007,6 +1036,7 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
         { senderId: otherUserId, receiverId: userId },
       ],
     })
+      .select('text senderId receiverId createdAt status isRead reactions')
       .sort({ createdAt: 1 })
       .lean();
     res.json(messages);
@@ -1130,27 +1160,29 @@ app.post('/api/reels', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(mentions, userId, reel._id.toString(), 'reel');
+      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString());
     }
 
     // Send tag notifications to tagged users
     if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
       const tagger = await User.findById(userId).lean();
       if (tagger) {
-        for (const taggedUserId of taggedUsers) {
-          if (taggedUserId !== userId) {
-            const notification = await Notification.create({
-              userId: taggedUserId,
-              type: 'tag',
-              content: `${tagger.name} tagged you in a reel`,
-              relatedUserId: userId,
-              relatedPostId: reel._id,
+        const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
+        if (filteredTaggedUsers.length > 0) {
+          const reelTagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
+            userId: taggedUserId,
+            type: 'tag',
+            content: `${tagger.name} tagged you in a reel`,
+            relatedUserId: userId,
+            relatedPostId: reel._id,
+          }));
+          const createdReelTagNotifications = await Notification.insertMany(reelTagNotifications);
+          createdReelTagNotifications.forEach((notif, idx) => {
+            io.to(`user_${filteredTaggedUsers[idx]}`).emit('new_notification', {
+              ...notif.toObject(),
+              id: notif._id.toString(),
             });
-            io.to(`user_${taggedUserId}`).emit('new_notification', {
-              ...notification.toObject(),
-              id: notification._id.toString(),
-            });
-          }
+          });
         }
       }
     }
@@ -1194,6 +1226,7 @@ app.get('/api/reels/:reelId/comments', async (req, res) => {
     const { reelId } = req.params;
     const comments = await Comment.find({ postId: reelId })
       .sort({ createdAt: -1 })
+      .limit(100)
       .populate('userId', 'name username avatarUrl')
       .lean();
     res.json(comments);
@@ -1384,27 +1417,32 @@ app.post('/api/reels/:reelId/share', async (req, res) => {
       return res.status(404).json({ error: 'Reel not found' });
     }
 
-    for (const targetUserId of targetUserIds) {
-      await Share.create({
-        senderId: userId,
-        postId: reelId,
-        receiverId: targetUserId,
-      });
+    // Fetch sender once outside the loop
+    const sender = await User.findById(userId).lean();
 
-      const sender = await User.findById(userId).lean();
-      if (sender) {
-        const notification = await Notification.create({
-          userId: targetUserId,
-          type: 'share',
-          content: `${sender.name} shared a reel with you`,
-          relatedUserId: userId,
-          relatedPostId: reelId,
+    // Bulk create shares
+    const reelShares = targetUserIds.map((targetUserId: string) => ({
+      senderId: userId,
+      postId: reelId,
+      receiverId: targetUserId,
+    }));
+    await Share.insertMany(reelShares);
+
+    if (sender) {
+      const reelShareNotifications = targetUserIds.map((targetUserId: string) => ({
+        userId: targetUserId,
+        type: 'share',
+        content: `${sender.name} shared a reel with you`,
+        relatedUserId: userId,
+        relatedPostId: reelId,
+      }));
+      const createdReelShareNotifications = await Notification.insertMany(reelShareNotifications);
+      createdReelShareNotifications.forEach((notif, idx) => {
+        io.to(`user_${targetUserIds[idx]}`).emit('new_notification', {
+          ...notif.toObject(),
+          id: notif._id.toString(),
         });
-        io.to(`user_${targetUserId}`).emit('new_notification', {
-          ...notification.toObject(),
-          id: notification._id.toString(),
-        });
-      }
+      });
     }
 
     await Reel.findByIdAndUpdate(reelId, { $inc: { sharesCount: targetUserIds.length } });
@@ -1490,6 +1528,7 @@ app.get('/api/search', async (req, res) => {
         content: searchRegex,
         isDeleted: { $ne: true },
       })
+        .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
         .populate('userId', 'name username avatarUrl')
         .sort({ createdAt: -1 })
         .limit(limitNum)
@@ -1502,6 +1541,7 @@ app.get('/api/search', async (req, res) => {
         caption: searchRegex,
         isDeleted: { $ne: true },
       })
+        .select('userId caption thumbnailUrl duration likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
         .populate('userId', 'name username avatarUrl')
         .sort({ createdAt: -1 })
         .limit(limitNum)
@@ -1533,34 +1573,40 @@ async function sendMentionNotifications(
   mentionerUserId: string,
   mentions: string[],
   contentType: 'post' | 'comment' | 'reel',
-  contentId: string,
-  io: any
+  contentId: string
 ) {
   try {
-    // Find all mentioned users
-    const mentionedUsers = await User.find({ username: { $in: mentions } }).lean();
-    const mentioner = await User.findById(mentionerUserId).lean();
+    // Find all mentioned users and the mentioner in parallel
+    const [mentionedUsers, mentioner] = await Promise.all([
+      User.find({ username: { $in: mentions } }).lean(),
+      User.findById(mentionerUserId).lean(),
+    ]);
 
     if (!mentioner) return;
 
-    // Create notifications for each mentioned user
-    for (const user of mentionedUsers) {
-      if (user._id.toString() === mentionerUserId) continue; // Don't notify self
+    const usersToNotify = mentionedUsers.filter(
+      (user) => user._id.toString() !== mentionerUserId
+    );
 
-      const notification = await Notification.create({
-        userId: user._id,
-        type: 'mention',
-        content: `${mentioner.name} mentioned you in a ${contentType}`,
-        relatedUserId: mentionerUserId,
-        relatedPostId: contentType !== 'comment' ? contentId : undefined,
-      });
+    if (usersToNotify.length === 0) return;
 
-      // Emit real-time notification
-      io.to(`user_${user._id.toString()}`).emit('new_notification', {
-        ...notification.toObject(),
-        id: notification._id.toString()
+    // Bulk create notifications instead of one per user
+    const mentionNotifications = usersToNotify.map((user) => ({
+      userId: user._id,
+      type: 'mention',
+      content: `${mentioner.name} mentioned you in a ${contentType}`,
+      relatedUserId: mentionerUserId,
+      relatedPostId: contentType !== 'comment' ? contentId : undefined,
+    }));
+    const createdMentionNotifications = await Notification.insertMany(mentionNotifications);
+
+    // Emit real-time notifications
+    createdMentionNotifications.forEach((notif, idx) => {
+      io.to(`user_${usersToNotify[idx]._id.toString()}`).emit('new_notification', {
+        ...notif.toObject(),
+        id: notif._id.toString(),
       });
-    }
+    });
   } catch (error) {
     console.error('Error sending mention notifications:', error);
   }
