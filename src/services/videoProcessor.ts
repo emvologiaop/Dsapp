@@ -172,9 +172,12 @@ export async function processVideo(
 
   // Save original video temporarily
   const tempVideoPath = path.join(tempFolder, `original-${Date.now()}-${originalFilename}`);
-  fs.writeFileSync(tempVideoPath, videoBuffer);
+  let thumbnailPath: string | null = null;
+  const transcodedPaths: string[] = [];
 
   try {
+    fs.writeFileSync(tempVideoPath, videoBuffer);
+
     // Get video metadata
     const metadata = await getVideoMetadata(tempVideoPath);
 
@@ -184,7 +187,7 @@ export async function processVideo(
     }
 
     // Generate thumbnail with aggressive compression
-    const thumbnailPath = await generateThumbnail(tempVideoPath);
+    thumbnailPath = await generateThumbnail(tempVideoPath);
     const thumbnailBuffer = fs.readFileSync(thumbnailPath);
     const thumbnailFilename = generateUniqueFilename('thumbnail.jpg', 'videos/thumbnails/');
     const thumbnailUrl = await uploadToR2(thumbnailBuffer, thumbnailFilename, 'image/jpeg', '');
@@ -209,6 +212,7 @@ export async function processVideo(
 
     // Upload transcoded videos to R2
     for (const video of transcodedVideos) {
+      transcodedPaths.push(video.path);
       const videoBuffer = fs.readFileSync(video.path);
       const videoFilename = generateUniqueFilename(`${video.quality}.mp4`, 'videos/');
       const videoUrl = await uploadToR2(videoBuffer, videoFilename, 'video/mp4', '');
@@ -219,14 +223,7 @@ export async function processVideo(
         width: video.width,
         height: video.height,
       });
-
-      // Clean up transcoded file
-      fs.unlinkSync(video.path);
     }
-
-    // Clean up temporary files
-    fs.unlinkSync(tempVideoPath);
-    fs.unlinkSync(thumbnailPath);
 
     // Use the first transcoded quality as the default URL
     // Don't upload original to save storage on free tier
@@ -239,11 +236,27 @@ export async function processVideo(
       originalUrl, // Actually points to best quality, not original
     };
   } catch (error) {
-    // Clean up on error
-    if (fs.existsSync(tempVideoPath)) {
-      fs.unlinkSync(tempVideoPath);
-    }
     throw error;
+  } finally {
+    // Clean up all temporary files
+    cleanupTempFile(tempVideoPath);
+    if (thumbnailPath) {
+      cleanupTempFile(thumbnailPath);
+    }
+    transcodedPaths.forEach(cleanupTempFile);
+  }
+}
+
+/**
+ * Helper function to safely delete a temporary file
+ */
+function cleanupTempFile(filePath: string): void {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch (error) {
+    console.error(`Failed to clean up temporary file ${filePath}:`, error);
   }
 }
 
