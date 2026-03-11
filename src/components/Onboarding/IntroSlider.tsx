@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, Share2, ShieldCheck, Newspaper, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ThemeSwitch } from '../ui/ThemeSwitch';
 
 interface Slide {
   title: string;
@@ -13,25 +14,25 @@ interface Slide {
 const slides: Slide[] = [
   {
     title: "DDU Life, Unfiltered",
-    description: "Forget the syllabus. This is where the real campus magic happens.",
+    description: "Your complete campus social hub. Share posts and photos, create viral reels, chat in real-time, and discover what's trending. Connect with your campus community in one seamless platform.",
     icon: <Zap className="w-16 h-16" />,
     color: "text-primary"
   },
   {
     title: "Share Your Vibe",
-    description: "Post, flex, and go viral. Your campus, your rules.",
+    description: "Create engaging posts with photos, short-form reels with auto-compression, and interact through likes, comments, and shares. Go anonymous or showcase your profile - your content, your way.",
     icon: <Share2 className="w-16 h-16" />,
     color: "text-primary"
   },
   {
     title: "Data-Saving Mode",
-    description: "Keep your data for the important stuff. We keep it light.",
+    description: "Smart compression keeps everything running smooth. Switch to Lite Mode for 240p videos, get optimized media delivery, and enjoy instant messaging without burning through your data.",
     icon: <ShieldCheck className="w-16 h-16" />,
     color: "text-primary"
   },
   {
     title: "The Campus Oracle",
-    description: "Know the tea before it's even brewed. Stay in the loop.",
+    description: "Real-time notifications, message reactions, typing indicators, and read receipts. Stay connected with Telegram integration, vote on features, and never miss what matters on campus.",
     icon: <Newspaper className="w-16 h-16" />,
     color: "text-primary"
   }
@@ -70,6 +71,11 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
 
   return (
     <div className="relative h-full flex flex-col items-center justify-center p-6 text-center">
+      {/* Theme Toggle Button - Top Right */}
+      <div className="absolute top-6 right-6 z-10">
+        <ThemeSwitch />
+      </div>
+
       <AnimatePresence mode="wait">
         <motion.div
           key={currentSlide}
@@ -79,7 +85,7 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
           exit="exit"
           className="flex flex-col items-center space-y-6"
         >
-          <motion.div 
+          <motion.div
             variants={itemVariants}
             animate={{ y: [0, -15, 0] }}
             transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
@@ -92,7 +98,7 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
           <motion.h2 variants={itemVariants} className={cn("text-4xl font-bold tracking-tighter", slides[currentSlide].color)}>
             {slides[currentSlide].title}
           </motion.h2>
-          <motion.p variants={itemVariants} className="text-muted-foreground text-lg max-w-xs">
+          <motion.p variants={itemVariants} className="text-muted-foreground text-lg max-w-md px-4">
             {slides[currentSlide].description}
           </motion.p>
         </motion.div>
