@@ -27,6 +27,8 @@ import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js'
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
 import { extractHashtags, normalizeHashtagQuery } from './src/utils/socialText.js';
+import { sanitizeSearchQuery } from './src/utils/validation.js';
+import { getActorRateLimitKey, getRequestOrigin, isOriginAllowed, shouldBypassOriginCheck } from './src/utils/requestSecurity.js';
 
 dotenv.config();
 
@@ -45,6 +47,30 @@ const io = new SocketIOServer(httpServer, {
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({ origin: allowedOrigins }));
+
+app.use((_, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  next();
+});
+
+app.use('/api', (req, res, next) => {
+  if (shouldBypassOriginCheck(req)) {
+    return next();
+  }
+
+  const requestOrigin = getRequestOrigin(req);
+  if (!isOriginAllowed(requestOrigin, allowedOrigins)) {
+    return res.status(403).json({ error: 'Untrusted request origin' });
+  }
+
+  next();
+});
+
 app.use(express.json({ limit: '100kb' }));
 // Use higher limit only for upload endpoints
 app.use('/api/posts', express.json({ limit: '50mb' }));
@@ -58,6 +84,48 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 app.use(limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+});
+
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `search:${getActorRateLimitKey(req)}`,
+  message: { error: 'Too many search requests. Please slow down.' },
+});
+
+const mutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `mutation:${getActorRateLimitKey(req)}`,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
+  message: { error: 'Too many write requests. Please wait and try again.' },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `upload:${getActorRateLimitKey(req)}`,
+  message: { error: 'Upload limit reached. Please try again later.' },
+});
+
+app.use('/api/auth', authLimiter);
+app.use('/api/search', searchLimiter);
+app.use('/api/users/search/mentions', searchLimiter);
+app.use(['/api/posts', '/api/reels', '/api/comments', '/api/users', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
+app.use(['/api/images', '/api/reels/upload-r2', '/api/stories'], uploadLimiter);
 
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
@@ -1509,7 +1577,10 @@ app.get('/api/search', async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
 
-    const queryString = query.trim();
+    const queryString = sanitizeSearchQuery(query);
+    if (!queryString) {
+      return res.status(400).json({ error: 'Search query is invalid' });
+    }
     const searchRegex = { $regex: queryString, $options: 'i' };
     const normalizedHashtag = normalizeHashtagQuery(queryString);
     const limitNum = Math.min(parseInt(limit as string) || 10, 50);
@@ -1873,10 +1944,15 @@ app.get('/api/users/search/mentions', async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
+    const sanitizedQuery = sanitizeSearchQuery(query, 30);
+    if (!sanitizedQuery) {
+      return res.status(400).json({ error: 'query is invalid' });
+    }
+
     const users = await User.find({
       $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { name: { $regex: query, $options: 'i' } }
+        { username: { $regex: sanitizedQuery, $options: 'i' } },
+        { name: { $regex: sanitizedQuery, $options: 'i' } }
       ],
       _id: { $ne: currentUserId } // Exclude current user
     })
