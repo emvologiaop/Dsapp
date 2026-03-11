@@ -19,6 +19,9 @@ export interface IReel extends Document {
   likedBy: mongoose.Types.ObjectId[];
   commentsCount: number;
   sharesCount: number;
+  isDeleted: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -43,6 +46,9 @@ const ReelSchema = new Schema<IReel>(
     likedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     commentsCount: { type: Number, default: 0 },
     sharesCount: { type: Number, default: 0 },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
 );
