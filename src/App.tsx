@@ -16,6 +16,9 @@ import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
 import { FeatureIdeas } from './components/FeatureIdeas';
+import { AdminDashboard } from './components/AdminDashboard';
+import { InstagramProfile } from './components/InstagramProfile';
+import { EditProfileModal } from './components/EditProfileModal';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -29,6 +32,7 @@ export default function App() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [chats, setChats] = useState<any[]>([]);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -116,12 +120,16 @@ export default function App() {
 
   if (activeChat) {
     return (
-      <ChatRoom 
-        currentUser={user} 
-        otherUser={activeChat} 
-        onBack={() => setActiveChat(null)} 
+      <ChatRoom
+        currentUser={user}
+        otherUser={activeChat}
+        onBack={() => setActiveChat(null)}
       />
     );
+  }
+
+  if (showAdminDashboard) {
+    return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
 
   return (
@@ -298,7 +306,25 @@ export default function App() {
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold">Settings</h2>
-            
+
+            {user?.role === 'admin' && (
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Admin</h3>
+                <FriendlyCard
+                  onClick={() => setShowAdminDashboard(true)}
+                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <div className="p-3 bg-primary/20 rounded-lg">
+                    <Shield size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-bold">Admin Dashboard</p>
+                    <p className="text-xs text-muted-foreground">Manage users, posts, and reels</p>
+                  </div>
+                </FriendlyCard>
+              </div>
+            )}
+
             <div className="space-y-4">
               <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Profile</h3>
               <FriendlyCard className="flex items-center gap-4">
