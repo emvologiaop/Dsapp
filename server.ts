@@ -56,13 +56,31 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // Ensure MongoDB connection is ready before handling API requests
-app.use('/api', async (_req, res, next) => {
+app.use('/api', async (req, res, next) => {
   try {
     await connectDB();
     next();
-  } catch (error) {
-    console.error('Database connection failed:', error);
-    res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error);
+    console.error('Database connection failed:', errorMessage);
+
+    // Provide more helpful error response based on the error type
+    const response: any = {
+      error: 'Service temporarily unavailable. Please try again shortly.',
+    };
+
+    // In development, include more details
+    if (process.env.NODE_ENV !== 'production') {
+      response.details = errorMessage;
+      response.hint = 'Check VERCEL_MONGODB_SETUP.md for MongoDB Atlas configuration';
+    }
+
+    // Add specific hints for known issues
+    if (errorMessage.includes('whitelist') || errorMessage.includes('IP')) {
+      response.hint = 'MongoDB Atlas IP whitelist issue. Check Network Access settings.';
+    }
+
+    res.status(503).json(response);
   }
 });
 
