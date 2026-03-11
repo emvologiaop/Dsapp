@@ -5,8 +5,8 @@ import { X, Send, Ghost } from 'lucide-react';
 interface Comment {
   _id: string;
   userId: { _id: string; name: string } | null;
+  content: string;
   text?: string;
-  content?: string;
   isAnonymous: boolean;
   createdAt: string;
 }
