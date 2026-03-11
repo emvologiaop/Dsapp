@@ -55,7 +55,17 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-connectDB().catch(console.error);
+// Ensure MongoDB connection is ready before handling API requests
+app.use('/api', async (_req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error('Database connection failed:', error);
+    res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+  }
+});
+
 initBot(io);
 
 async function hashPassword(password: string): Promise<string> {
