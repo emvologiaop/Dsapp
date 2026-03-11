@@ -10,6 +10,8 @@ describe('telegram utilities', () => {
   it('normalizes telegram usernames with or without @', () => {
     expect(normalizeTelegramUsername('@DDU_social_BOT')).toBe('DDU_social_BOT');
     expect(normalizeTelegramUsername('DDU_social_BOT')).toBe('DDU_social_BOT');
+    expect(normalizeTelegramUsername('')).toBe('DDU_social_BOT');
+    expect(normalizeTelegramUsername('@@@')).toBe('DDU_social_BOT');
   });
 
   it('builds a handle and profile URL from the configured username', () => {

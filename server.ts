@@ -1205,7 +1205,7 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
     const { userId, text, content, isAnonymous } = req.body;
     const commentContent = content || text;
     if (!userId || !commentContent) {
-      return res.status(400).json({ error: 'userId and comment content are required' });
+      return res.status(400).json({ error: 'userId and content (or text) are required' });
     }
 
     const comment = await Comment.create({

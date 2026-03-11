@@ -1,13 +1,24 @@
-export function normalizeTelegramUsername(username?: string, fallback = 'DDU_social_BOT') {
+export const DEFAULT_TELEGRAM_BOT_USERNAME = 'DDU_social_BOT';
+
+export function normalizeTelegramUsername(
+  username?: string,
+  fallback = DEFAULT_TELEGRAM_BOT_USERNAME
+) {
   const normalized = (username || fallback).trim().replace(/^@+/, '');
   return normalized || fallback;
 }
 
-export function getTelegramHandle(username?: string, fallback = 'DDU_social_BOT') {
+export function getTelegramHandle(
+  username?: string,
+  fallback = DEFAULT_TELEGRAM_BOT_USERNAME
+) {
   return `@${normalizeTelegramUsername(username, fallback)}`;
 }
 
-export function getTelegramProfileUrl(username?: string, fallback = 'DDU_social_BOT') {
+export function getTelegramProfileUrl(
+  username?: string,
+  fallback = DEFAULT_TELEGRAM_BOT_USERNAME
+) {
   return `https://t.me/${normalizeTelegramUsername(username, fallback)}`;
 }
 

@@ -53,7 +53,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          text: newComment,
+          content: newComment,
           isAnonymous,
         }),
       });
