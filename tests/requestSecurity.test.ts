@@ -38,9 +38,9 @@ describe('requestSecurity helpers', () => {
   });
 
   it('builds rate limit keys from actor identifiers before falling back to ip', () => {
-    expect(getActorRateLimitKey({ body: { userId: 'user-1' }, ip: '127.0.0.1' })).toBe('user-1');
-    expect(getActorRateLimitKey({ body: { reporterId: 'reporter-1' }, ip: '127.0.0.1' })).toBe('reporter-1');
-    expect(getActorRateLimitKey({ params: { targetId: 'target-1' }, ip: '127.0.0.1' })).toBe('target-1');
+    expect(getActorRateLimitKey({ body: { userId: '507f1f77bcf86cd799439011' }, ip: '127.0.0.1' })).toBe('507f1f77bcf86cd799439011');
+    expect(getActorRateLimitKey({ body: { reporterId: 'invalid-user' }, ip: '127.0.0.1' })).toBe('127.0.0.1');
+    expect(getActorRateLimitKey({ params: { targetId: '507f1f77bcf86cd799439012' }, ip: '127.0.0.1' })).toBe('507f1f77bcf86cd799439012');
     expect(getActorRateLimitKey({ ip: '127.0.0.1' })).toBe('127.0.0.1');
   });
 });

@@ -1,3 +1,5 @@
+import { isValidObjectId } from './validation';
+
 type HeaderValue = string | string[] | undefined;
 
 interface RequestLike {
@@ -71,9 +73,11 @@ export function getActorRateLimitKey(req: RequestLike): string {
     req.body?.senderId ||
     req.params?.userId ||
     req.params?.targetId ||
-    req.query?.userId ||
-    req.ip ||
-    'anonymous';
+    req.query?.userId;
 
-  return String(actorId);
+  if (typeof actorId === 'string' && isValidObjectId(actorId)) {
+    return actorId;
+  }
+
+  return req.ip || 'anonymous';
 }

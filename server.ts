@@ -124,7 +124,10 @@ const uploadLimiter = rateLimit({
 app.use('/api/auth', authLimiter);
 app.use('/api/search', searchLimiter);
 app.use('/api/users/search/mentions', searchLimiter);
-app.use(['/api/posts', '/api/reels', '/api/comments', '/api/users', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
+app.use(['/api/posts', '/api/reels', '/api/comments', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
+app.use('/api/users/:targetId/follow', mutationLimiter);
+app.use('/api/users/:userId/profile', mutationLimiter);
+app.use('/api/users/:userId/telegram-notifications', mutationLimiter);
 app.use(['/api/images', '/api/reels/upload-r2', '/api/stories'], uploadLimiter);
 
 // Ensure MongoDB connection is ready before handling API requests

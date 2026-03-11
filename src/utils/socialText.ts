@@ -15,5 +15,5 @@ export function normalizeHashtagQuery(query: string): string {
 }
 
 export function splitTextWithHashtags(text: string): string[] {
-  return text.split(/(#[A-Za-z0-9_]+)/g).filter(Boolean);
+  return text.split(/(#\w+)/g).filter(Boolean);
 }
