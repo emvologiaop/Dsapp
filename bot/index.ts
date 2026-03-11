@@ -1,6 +1,6 @@
 import TelegramBot from 'node-telegram-bot-api';
-import dotenv from 'dotenv';
-import crypto from 'crypto';
+import * as dotenv from 'dotenv';
+import * as crypto from 'crypto';
 import { User } from '../src/models/User.js';
 import { Ad } from '../src/models/Ad.js';
 

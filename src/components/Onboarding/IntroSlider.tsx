@@ -13,26 +13,26 @@ interface Slide {
 
 const slides: Slide[] = [
   {
-    title: "DDU Life, Unfiltered",
-    description: "Your complete campus social hub. Share posts and photos, create viral reels, chat in real-time, and discover what's trending. Connect with your campus community in one seamless platform.",
+    title: "Welcome to the Chaos",
+    description: "DDU Social: Where procrastination meets productivity, and your WiFi signal is stronger than your GPA. Share posts, create reels, stalk your crush, and pretend you're studying – all in one place. Because who needs sleep when you have infinite scroll?",
     icon: <Zap className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "Share Your Vibe",
-    description: "Create engaging posts with photos, short-form reels with auto-compression, and interact through likes, comments, and shares. Go anonymous or showcase your profile - your content, your way.",
+    title: "Unleash Your Inner Demons",
+    description: "Post anonymously like a coward or flex with your real name. Upload that blurry 2 AM cafeteria photo, create chaotic reels, get roasted in comments, and collect hollow internet validation. Fame is temporary, but digital footprints are forever.",
     icon: <Share2 className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "Data-Saving Mode",
-    description: "Smart compression keeps everything running smooth. Switch to Lite Mode for 240p videos, get optimized media delivery, and enjoy instant messaging without burning through your data.",
+    title: "The Surveillance Hub",
+    description: "Real-time notifications so you never miss drama, read receipts to haunt people who ignore you, and typing indicators to anxiously watch someone craft the perfect response. Plus Telegram integration, because one social platform isn't enough to ruin your attention span.",
     icon: <ShieldCheck className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "The Campus Oracle",
-    description: "Real-time notifications, message reactions, typing indicators, and read receipts. Stay connected with Telegram integration, vote on features, and never miss what matters on campus.",
+    title: "Your New Addiction",
+    description: "Instant messaging faster than your response to actual responsibilities. Get notified about things that don't matter, vote on features nobody asked for, and stay connected to campus gossip 24/7. Welcome to your productivity's worst nightmare!",
     icon: <Newspaper className="w-16 h-16" />,
     color: "text-primary"
   }
