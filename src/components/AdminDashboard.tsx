@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
-import { Users, FileText, Film, Shield, Search, X, AlertCircle, Trash2, Ban, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Users, FileText, Film, Shield, Search, X, AlertCircle, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone } from 'lucide-react';
+import { AdManagement } from './AdManagement';
 
 interface AdminStats {
   stats: {
@@ -51,7 +52,7 @@ interface Props {
 }
 
 export function AdminDashboard({ userId, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'reels'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'reels' | 'ads'>('stats');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -250,6 +251,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
             { id: 'users', label: 'Users', icon: Users },
             { id: 'posts', label: 'Posts', icon: FileText },
             { id: 'reels', label: 'Reels', icon: Film },
+            { id: 'ads', label: 'Ads', icon: Megaphone },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -601,6 +603,11 @@ export function AdminDashboard({ userId, onClose }: Props) {
               </div>
             )}
           </div>
+        )}
+
+        {/* Ads Tab */}
+        {activeTab === 'ads' && (
+          <AdManagement userId={userId} />
         )}
       </div>
 
