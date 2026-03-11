@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import { uploadToR2, generateUniqueFilename } from './r2Storage.js';
 
+/**
+ * Result of video processing including thumbnail and multiple quality versions
+ */
 export interface VideoProcessingResult {
   thumbnail: string;
   qualities: {
@@ -17,6 +20,17 @@ export interface VideoProcessingResult {
 
 /**
  * Generate thumbnail from video with optimized compression
+ *
+ * @param videoPath - Path to the video file on disk
+ * @param outputFolder - Directory to save the thumbnail (default: '/tmp/thumbnails')
+ * @returns Path to the generated thumbnail file
+ *
+ * @throws Error if thumbnail generation fails
+ *
+ * @remarks
+ * - Takes screenshot at 1 second mark
+ * - Outputs 360x640 resolution to reduce storage costs
+ * - Uses JPEG quality 5 for high compression
  */
 export async function generateThumbnail(
   videoPath: string,
@@ -48,6 +62,11 @@ export async function generateThumbnail(
 
 /**
  * Get video metadata (duration, dimensions)
+ *
+ * @param videoPath - Path to the video file on disk
+ * @returns Object containing duration (seconds), width, and height
+ *
+ * @throws Error if video metadata cannot be read or video has no video stream
  */
 export async function getVideoMetadata(videoPath: string): Promise<{
   duration: number;
@@ -73,6 +92,23 @@ export async function getVideoMetadata(videoPath: string): Promise<{
 /**
  * Transcode video to multiple qualities with advanced compression
  * Optimized for Cloudflare R2 free tier with two-pass encoding
+ *
+ * @param videoPath - Path to the input video file
+ * @param qualities - Array of quality settings (name, dimensions, bitrate, CRF)
+ * @param outputFolder - Directory to save transcoded files (default: '/tmp/transcoded')
+ * @returns Array of transcoded video info (quality, path, dimensions)
+ *
+ * @throws Error if transcoding fails
+ *
+ * @remarks
+ * Uses two-pass encoding for better compression:
+ * - Pass 1: Analyze video without audio
+ * - Pass 2: Encode with analysis data for optimal quality
+ *
+ * Settings optimized for free tier:
+ * - Preset: slow (better compression)
+ * - Audio bitrate: 64k (reduced from 128k)
+ * - H.264 codec with yuv420p pixel format for compatibility
  */
 export async function transcodeVideo(
   videoPath: string,
@@ -160,6 +196,27 @@ export async function transcodeVideo(
 /**
  * Process video: generate thumbnail and transcode to multiple qualities
  * Optimized for Cloudflare R2 free tier - uses lower quality settings and removes original upload
+ *
+ * @param videoBuffer - Video file content as Buffer
+ * @param originalFilename - Original filename (used to extract extension)
+ * @returns VideoProcessingResult with thumbnail URL, quality URLs, duration
+ *
+ * @throws Error if video exceeds 60 seconds or if processing fails
+ *
+ * @remarks
+ * Processing steps:
+ * 1. Save video to temp folder
+ * 2. Extract metadata and validate duration (max 60 seconds)
+ * 3. Generate thumbnail (360x640 JPEG)
+ * 4. Transcode to 360p and 540p (no 1080p to save storage)
+ * 5. Upload all files to R2 storage
+ * 6. Clean up all temporary files (using finally block)
+ *
+ * Free tier optimizations:
+ * - 60 second duration limit
+ * - Only 360p and 540p qualities
+ * - Aggressive compression settings
+ * - No original video upload (uses best quality instead)
  */
 export async function processVideo(
   videoBuffer: Buffer,
@@ -249,6 +306,9 @@ export async function processVideo(
 
 /**
  * Helper function to safely delete a temporary file
+ * Catches and logs errors to prevent cleanup failures from breaking the app
+ *
+ * @param filePath - Path to the file to delete
  */
 function cleanupTempFile(filePath: string): void {
   try {
@@ -262,6 +322,12 @@ function cleanupTempFile(filePath: string): void {
 
 /**
  * Process image: optimize and upload
+ *
+ * @param imageBuffer - Image file content as Buffer
+ * @param originalFilename - Original filename (used for generating unique name)
+ * @returns Public URL of the uploaded image
+ *
+ * @throws Error if upload fails
  */
 export async function processImage(
   imageBuffer: Buffer,
