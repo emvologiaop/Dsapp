@@ -16,6 +16,9 @@ import { Notification } from './src/models/Notification.js';
 import { Share } from './src/models/Share.js';
 import { Comment } from './src/models/Comment.js';
 import { Reel } from './src/models/Reel.js';
+import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
+import { processVideo, processImage } from './src/services/videoProcessor.js';
+import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 
 dotenv.config();
 
@@ -912,6 +915,99 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
   } catch (error) {
     console.error('POST /api/reels/:reelId/comments error:', error);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ── R2 Storage Endpoints ──────────────────────────────────────────────────────
+
+// Upload video to R2 with processing (transcoding, thumbnail)
+app.post('/api/reels/upload-r2', uploadVideo.single('video'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file provided' });
+    }
+
+    const { userId, caption, isAnonymous } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Process video (transcode, generate thumbnail, upload to R2)
+    const processedVideo = await processVideo(req.file.buffer, req.file.originalname);
+
+    // Create reel with R2 URLs
+    const reel = await Reel.create({
+      userId,
+      videoUrl: processedVideo.qualities[0]?.url || processedVideo.originalUrl, // Default to first quality
+      videoQualities: processedVideo.qualities,
+      thumbnailUrl: processedVideo.thumbnail,
+      duration: processedVideo.duration,
+      originalUrl: processedVideo.originalUrl,
+      caption: caption || '',
+      isAnonymous: Boolean(isAnonymous),
+    });
+
+    const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/reels/upload-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload video to R2' });
+  }
+});
+
+// Upload image to R2
+app.post('/api/images/upload-r2', uploadImage.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const imageUrl = await processImage(req.file.buffer, req.file.originalname);
+    res.status(200).json({ url: imageUrl });
+  } catch (error) {
+    console.error('POST /api/images/upload-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload image to R2' });
+  }
+});
+
+// Upload multiple images to R2
+app.post('/api/images/upload-multiple-r2', uploadMultipleImages.array('images', 10), async (req, res) => {
+  try {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      return res.status(400).json({ error: 'No image files provided' });
+    }
+
+    const uploadPromises = req.files.map(file =>
+      processImage(file.buffer, file.originalname)
+    );
+
+    const imageUrls = await Promise.all(uploadPromises);
+    res.status(200).json({ urls: imageUrls });
+  } catch (error) {
+    console.error('POST /api/images/upload-multiple-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload images to R2' });
+  }
+});
+
+// Stream video chunk from R2 (for chunked streaming)
+app.get('/api/stream/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const range = req.headers.range;
+
+    // In a real implementation, you would:
+    // 1. Get video metadata from DB
+    // 2. Fetch the appropriate quality version
+    // 3. Stream the video with range support
+
+    // For now, return a simple response
+    res.status(501).json({
+      error: 'Streaming endpoint not yet implemented',
+      message: 'Videos should be accessed directly from R2 public URL with CDN'
+    });
+  } catch (error) {
+    console.error('GET /api/stream/:videoId error:', error);
+    res.status(500).json({ error: 'Failed to stream video' });
   }
 });
 

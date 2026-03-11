@@ -5,11 +5,24 @@ import { cn } from '../lib/utils';
 import { ReelCommentsPanel } from './ReelCommentsPanel';
 import { ShareModal } from './ShareModal';
 import { simpleVideoCompress } from '../utils/videoCompression';
+import { uploadVideoToR2, UploadProgress } from '../utils/r2Upload';
+import { usePredictivePreload } from '../hooks/usePredictivePreload';
+import { VideoPlayer } from './VideoPlayer';
+
+interface VideoQuality {
+  quality: string;
+  url: string;
+  width: number;
+  height: number;
+}
 
 interface Reel {
   _id: string;
   userId: { _id: string; name: string; username: string } | null;
   videoUrl: string;
+  videoQualities?: VideoQuality[];
+  thumbnailUrl?: string;
+  duration?: number;
   caption: string;
   isAnonymous: boolean;
   likesCount: number;
@@ -36,10 +49,14 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
-  const [compressionProgress, setCompressionProgress] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
   const videoRef = useRef<HTMLVideoElement>(null);
   const y = useMotionValue(0);
   const opacity = useTransform(y, [-200, 0, 200], [0.5, 1, 0.5]);
+
+  // Predictive preloading for next reels
+  const { isPreloaded } = usePredictivePreload(reels, currentIndex, 3);
 
   useEffect(() => {
     fetchReels();
@@ -124,37 +141,56 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
   const handleUpload = async () => {
     if (!uploadFile) return;
     setIsUploading(true);
-    setCompressionProgress(10);
+    setUploadProgress(0);
 
     try {
-      // Compress video before upload
-      setCompressionProgress(30);
-      const compressedData = await simpleVideoCompress(uploadFile, 10);
-      setCompressionProgress(70);
+      if (useR2Upload) {
+        // Upload to R2 with processing (transcoding, thumbnail generation)
+        await uploadVideoToR2(
+          uploadFile,
+          user?.id,
+          uploadCaption,
+          false,
+          (progress: UploadProgress) => {
+            setUploadProgress(progress.percentage);
+          }
+        );
 
-      const res = await fetch('/api/reels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id,
-          caption: uploadCaption,
-          videoData: compressedData,
-          isAnonymous: false,
-        }),
-      });
+        setUploadProgress(100);
+      } else {
+        // Legacy: Compress and upload as base64
+        setUploadProgress(30);
+        const compressedData = await simpleVideoCompress(uploadFile, 10);
+        setUploadProgress(70);
 
-      setCompressionProgress(100);
+        const res = await fetch('/api/reels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user?.id,
+            caption: uploadCaption,
+            videoData: compressedData,
+            isAnonymous: false,
+          }),
+        });
 
-      if (res.ok) {
-        setShowUpload(false);
-        setUploadCaption('');
-        setUploadFile(null);
-        setCompressionProgress(0);
-        fetchReels();
+        setUploadProgress(100);
+
+        if (!res.ok) {
+          throw new Error('Upload failed');
+        }
       }
+
+      // Reset and refresh
+      setShowUpload(false);
+      setUploadCaption('');
+      setUploadFile(null);
+      setUploadProgress(0);
+      fetchReels();
     } catch (error) {
       console.error('Upload error:', error);
-      setCompressionProgress(0);
+      alert('Upload failed. Please try again.');
+      setUploadProgress(0);
     } finally {
       setIsUploading(false);
     }
@@ -213,18 +249,18 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
             className="w-full bg-muted border border-border rounded-xl p-4 text-sm outline-none focus:border-primary transition-colors resize-none h-20"
           />
 
-          {isUploading && compressionProgress > 0 && (
+          {isUploading && uploadProgress > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {compressionProgress < 70 ? 'Compressing video...' : 'Uploading...'}
+                  {uploadProgress < 100 ? (useR2Upload ? 'Uploading to R2...' : 'Compressing & uploading...') : 'Complete!'}
                 </span>
-                <span className="font-bold text-primary">{compressionProgress}%</span>
+                <span className="font-bold text-primary">{uploadProgress}%</span>
               </div>
               <div className="h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-300"
-                  style={{ width: `${compressionProgress}%` }}
+                  style={{ width: `${uploadProgress}%` }}
                 />
               </div>
             </div>
