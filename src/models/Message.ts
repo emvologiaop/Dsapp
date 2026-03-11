@@ -47,4 +47,10 @@ const MessageSchema = new Schema<IMessage>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+MessageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 }); // Compound index for conversation history
+MessageSchema.index({ receiverId: 1, isRead: 1 }); // For unread message queries
+MessageSchema.index({ createdAt: -1 }); // For recent messages
+MessageSchema.index({ replyToId: 1 }); // For finding replies to a message
+
 export const Message = mongoose.model<IMessage>('Message', MessageSchema);

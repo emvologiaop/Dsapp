@@ -27,4 +27,9 @@ const NotificationSchema = new Schema<INotification>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+NotificationSchema.index({ userId: 1, isRead: 1, createdAt: -1 }); // Compound index for user's unread notifications
+NotificationSchema.index({ userId: 1, createdAt: -1 }); // For user's notification feed
+NotificationSchema.index({ createdAt: -1 }); // For recent notifications
+
 export const Notification = mongoose.model<INotification>('Notification', NotificationSchema);

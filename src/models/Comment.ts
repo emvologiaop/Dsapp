@@ -19,4 +19,8 @@ const CommentSchema = new Schema<IComment>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+CommentSchema.index({ postId: 1, createdAt: -1 }); // Compound index for post comments sorted by date
+CommentSchema.index({ userId: 1, createdAt: -1 }); // For user's comment history
+
 export const Comment = mongoose.model<IComment>('Comment', CommentSchema);

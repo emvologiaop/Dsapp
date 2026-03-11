@@ -35,4 +35,11 @@ const PostSchema = new Schema<IPost>(
   { timestamps: true }
 );
 
+// Indexes for performance optimization
+PostSchema.index({ userId: 1, createdAt: -1 }); // Compound index for user's posts sorted by date
+PostSchema.index({ isDeleted: 1, createdAt: -1 }); // For filtering non-deleted posts
+PostSchema.index({ createdAt: -1 }); // For recent posts feed
+PostSchema.index({ likedBy: 1 }); // For finding posts liked by a user
+PostSchema.index({ bookmarkedBy: 1 }); // For finding bookmarked posts
+
 export const Post = mongoose.model<IPost>('Post', PostSchema);
