@@ -943,7 +943,7 @@ app.get('/api/users/:userId/chats', async (req, res) => {
 
     const conversations = uniqueUserIds
       .map((otherId) => {
-        const u = userMap.get(otherId);
+        const u = userMap.get(otherId) as any;
         if (!u) return null;
         return {
           user: { id: otherId, name: u.name, username: u.username, avatarUrl: u.avatarUrl || '' },
