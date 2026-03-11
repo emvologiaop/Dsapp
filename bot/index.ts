@@ -75,31 +75,40 @@ export function initBot(io?: any) {
 
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    const user = await getUserFromTelegram(chatId);
 
-    if (user) {
-      // User is linked, show main menu
+    try {
+      const user = await getUserFromTelegram(chatId);
+
+      if (user) {
+        // User is linked, show main menu
+        bot.sendMessage(
+          chatId,
+          `🎉 Welcome back, *${user.name}*!\n\n` +
+          "Ready to dive into DDU Social? Pick an option below:",
+          {
+            parse_mode: 'Markdown',
+            reply_markup: getMainMenuKeyboard()
+          }
+        );
+      } else {
+        // User not linked, show linking instructions
+        bot.sendMessage(
+          chatId,
+          "🚀 *Welcome to DDU Social Bot!*\n\n" +
+          "Your campus social hub is now in your pocket. To get started:\n\n" +
+          "1️⃣ Open the DDU Social web app\n" +
+          "2️⃣ Get your 6-digit verification code\n" +
+          "3️⃣ Send it here to link your account\n\n" +
+          "Once linked, you'll get instant notifications, check stats, view trending posts, and much more!\n\n" +
+          "Need help? Use /help",
+          { parse_mode: 'Markdown' }
+        );
+      }
+    } catch (error) {
+      console.error('Error handling /start command:', error);
       bot.sendMessage(
         chatId,
-        `🎉 Welcome back, *${user.name}*!\n\n` +
-        "Ready to dive into DDU Social? Pick an option below:",
-        {
-          parse_mode: 'Markdown',
-          reply_markup: getMainMenuKeyboard()
-        }
-      );
-    } else {
-      // User not linked, show linking instructions
-      bot.sendMessage(
-        chatId,
-        "🚀 *Welcome to DDU Social Bot!*\n\n" +
-        "Your campus social hub is now in your pocket. To get started:\n\n" +
-        "1️⃣ Open the DDU Social web app\n" +
-        "2️⃣ Get your 6-digit verification code\n" +
-        "3️⃣ Send it here to link your account\n\n" +
-        "Once linked, you'll get instant notifications, check stats, view trending posts, and much more!\n\n" +
-        "Need help? Use /help",
-        { parse_mode: 'Markdown' }
+        "⚠️ Sorry, something went wrong. Please try again later or contact /support"
       );
     }
   });
