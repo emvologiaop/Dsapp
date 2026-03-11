@@ -8,6 +8,11 @@ dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 
+// Admin Configuration
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'Envologia01@gmail.com';
+const ADMIN_TELEGRAM_USERNAME = process.env.ADMIN_TELEGRAM_USERNAME || '@Envologia';
+const ADMIN_TELEGRAM_USER_ID = process.env.ADMIN_TELEGRAM_USER_ID || '6882100039';
+
 export function initBot(io?: any) {
   if (!token) {
     console.warn("TELEGRAM_BOT_TOKEN not found. Bot will not start.");
@@ -15,6 +20,12 @@ export function initBot(io?: any) {
   }
 
   const bot = new TelegramBot(token, { polling: true });
+
+  // Log admin configuration on startup
+  console.log("Telegram Bot initializing with admin config:");
+  console.log(`  Admin Email: ${ADMIN_EMAIL}`);
+  console.log(`  Admin Telegram: ${ADMIN_TELEGRAM_USERNAME}`);
+  console.log(`  Admin User ID: ${ADMIN_TELEGRAM_USER_ID}`);
 
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
@@ -52,14 +63,14 @@ export function initBot(io?: any) {
       chatId,
       "👨‍💻 *Contact the Developer*\n\n" +
       "Need to reach out to the development team?\n\n" +
-      "Telegram: @Dev_Envologia\n" +
-      "Email: Envologia01@gmail.com\n\n" +
+      `Telegram: ${ADMIN_TELEGRAM_USERNAME}\n` +
+      `Email: ${ADMIN_EMAIL}\n\n` +
       "For technical issues and support, use /support",
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
-            { text: '📱 Message Developer', url: 'https://t.me/Dev_Envologia' }
+            { text: '📱 Message Developer', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
           ]]
         }
       }
@@ -73,18 +84,18 @@ export function initBot(io?: any) {
       chatId,
       "🆘 *Technical Support*\n\n" +
       "Experiencing technical issues?\n\n" +
-      "Contact @Dev_Envologia for:\n" +
+      `Contact ${ADMIN_TELEGRAM_USERNAME} for:\n` +
       "• Bug reports\n" +
       "• Technical problems\n" +
       "• Feature requests\n" +
       "• Account issues\n\n" +
-      "Email: Envologia01@gmail.com",
+      `Email: ${ADMIN_EMAIL}`,
       {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [[
-            { text: '📧 Email Support', url: 'mailto:Envologia01@gmail.com' },
-            { text: '💬 Telegram', url: 'https://t.me/Dev_Envologia' }
+            { text: '📧 Email Support', url: `mailto:${ADMIN_EMAIL}` },
+            { text: '💬 Telegram', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
           ]]
         }
       }
