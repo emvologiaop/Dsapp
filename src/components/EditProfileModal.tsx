@@ -112,12 +112,14 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               <div className="px-6 py-6 space-y-6">
                 {/* Profile Picture */}
                 <div className="flex items-center gap-6">
-                  <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-2 border-border">
-                    {user?.avatarUrl ? (
-                      <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-primary">{user?.name?.[0] || 'U'}</span>
-                    )}
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-[3px] border-primary/20 shadow-md">
+                      {user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-primary">{user?.name?.[0] || 'U'}</span>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <button
@@ -127,7 +129,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       <Camera className="w-4 h-4" />
                       Change Photo
                     </button>
-                    <p className="text-xs text-muted-foreground mt-1">Coming soon</p>
+                    <p className="text-xs text-muted-foreground mt-1">Coming soon to DDU Social</p>
                   </div>
                 </div>
 
@@ -239,7 +241,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   type="submit"
                   disabled={isLoading}
                   className={cn(
-                    "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2",
+                    "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
                     isLoading && "opacity-50 cursor-not-allowed"
                   )}
                 >

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
 import { FollowButton } from './FollowButton';
-import { Settings, Grid3x3, Film, UserTag, MapPin, Link as LinkIcon, BadgeCheck, Calendar } from 'lucide-react';
+import { Settings, Grid3x3, Film, UserTag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -178,15 +178,22 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
 
   return (
     <div className="space-y-0">
-      {/* Profile Header */}
-      <div className="px-6 py-6">
+      {/* Profile Header - DDU Style */}
+      <div className="px-6 py-6 bg-gradient-to-b from-primary/5 to-transparent">
         <div className="flex items-start gap-6 mb-6">
-          {/* Avatar */}
-          <div className="w-20 h-20 md:w-28 md:h-28 rounded-full border-2 border-primary/20 bg-muted flex items-center justify-center text-4xl font-bold overflow-hidden shrink-0">
-            {profile.avatarUrl ? (
-              <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-primary">{profile.name?.[0] || 'U'}</span>
+          {/* Avatar with DDU ring */}
+          <div className="relative">
+            <div className="w-20 h-20 md:w-28 md:h-28 rounded-full border-[3px] border-primary/30 bg-muted flex items-center justify-center text-4xl font-bold overflow-hidden shrink-0 shadow-lg">
+              {profile.avatarUrl ? (
+                <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-primary">{profile.name?.[0] || 'U'}</span>
+              )}
+            </div>
+            {profile.isVerified && (
+              <div className="absolute -bottom-1 -right-1 bg-primary rounded-full p-1 border-2 border-background shadow-md">
+                <Sparkles className="w-4 h-4 text-primary-foreground" fill="currentColor" />
+              </div>
             )}
           </div>
 
@@ -195,7 +202,10 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             <div className="flex items-center gap-3 mb-4">
               <h2 className="text-lg font-semibold truncate">{profile.username}</h2>
               {profile.isVerified && (
-                <BadgeCheck className="w-5 h-5 text-primary shrink-0" fill="currentColor" />
+                <div className="shrink-0 flex items-center gap-1 bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                  <BadgeCheck className="w-4 h-4 text-primary" fill="currentColor" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary">DDU</span>
+                </div>
               )}
             </div>
 
@@ -221,7 +231,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 <>
                   <button
                     onClick={onEditProfile}
-                    className="flex-1 bg-muted hover:bg-muted/80 text-foreground px-6 py-2 rounded-lg text-sm font-semibold transition-all"
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground px-6 py-2 rounded-lg text-sm font-semibold transition-all shadow-sm"
                   >
                     Edit Profile
                   </button>
@@ -243,52 +253,54 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
           </div>
         </div>
 
-        {/* Profile Info */}
-        <div className="space-y-1">
-          <h3 className="font-bold text-base">{profile.name}</h3>
+        {/* Profile Info - DDU Typography */}
+        <div className="space-y-2">
+          <h3 className="font-bold text-base text-foreground">{profile.name}</h3>
           {profile.bio && (
-            <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
+            <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
           )}
-          {profile.department && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <MapPin className="w-3.5 h-3.5" />
-              <span>{profile.department}</span>
-            </div>
-          )}
-          {profile.location && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Calendar className="w-3.5 h-3.5" />
-              <span>{profile.location}</span>
-            </div>
-          )}
-          {profile.website && (
-            <a
-              href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-primary hover:underline"
-            >
-              <LinkIcon className="w-3.5 h-3.5" />
-              <span className="truncate">{profile.website}</span>
-            </a>
-          )}
+          <div className="flex flex-col gap-1 pt-1">
+            {profile.department && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <MapPin className="w-3.5 h-3.5 text-primary/60" />
+                <span>{profile.department}</span>
+              </div>
+            )}
+            {profile.location && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Calendar className="w-3.5 h-3.5 text-primary/60" />
+                <span>{profile.location}</span>
+              </div>
+            )}
+            {profile.website && (
+              <a
+                href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary hover:underline w-fit"
+              >
+                <LinkIcon className="w-3.5 h-3.5" />
+                <span className="truncate">{profile.website}</span>
+              </a>
+            )}
+          </div>
         </div>
 
-        {/* Stats Row - Mobile */}
+        {/* Stats Row - Mobile with DDU accent */}
         <div className="md:hidden flex items-center justify-around border-t border-border mt-6 pt-4">
           <div className="flex flex-col items-center">
-            <span className="font-bold text-base">{posts.length}</span>
-            <span className="text-xs text-muted-foreground">posts</span>
+            <span className="font-bold text-base text-primary">{posts.length}</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">posts</span>
           </div>
           <div className="w-px h-8 bg-border"></div>
           <div className="flex flex-col items-center">
-            <span className="font-bold text-base">{profile.followersCount || 0}</span>
-            <span className="text-xs text-muted-foreground">followers</span>
+            <span className="font-bold text-base text-primary">{profile.followersCount || 0}</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">followers</span>
           </div>
           <div className="w-px h-8 bg-border"></div>
           <div className="flex flex-col items-center">
-            <span className="font-bold text-base">{profile.followingCount || 0}</span>
-            <span className="text-xs text-muted-foreground">following</span>
+            <span className="font-bold text-base text-primary">{profile.followingCount || 0}</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">following</span>
           </div>
         </div>
       </div>
