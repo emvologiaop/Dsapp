@@ -10,7 +10,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "start": "node server.ts",
-    "seed-admin": "node seed-admin.js"
+    "seed-admin": "node seed-admin.js",
+    "vercel-build": "vite build"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1006.0",
