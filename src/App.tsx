@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -9,6 +9,8 @@ import { FollowButton } from './components/FollowButton';
 import { Inbox } from './components/Inbox';
 import { CommentsPanel } from './components/CommentsPanel';
 import { ReelsTab } from './components/ReelsTab';
+import { InstagramProfile } from './components/InstagramProfile';
+import { EditProfileModal } from './components/EditProfileModal';
 import { cn } from './lib/utils';
 import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
@@ -19,7 +21,7 @@ import { FeatureIdeas } from './components/FeatureIdeas';
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -27,6 +29,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [chats, setChats] = useState<any[]>([]);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('ddu_user');
@@ -83,6 +86,12 @@ export default function App() {
     localStorage.setItem('ddu_user', JSON.stringify(userData));
   };
 
+  const handleProfileUpdate = (updatedUser: any) => {
+    const mergedUser = { ...user, ...updatedUser };
+    setUser(mergedUser);
+    localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
+  };
+
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
   }
@@ -113,7 +122,7 @@ export default function App() {
         <div className="flex items-center gap-4">
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
-          <button 
+          <button
             onClick={() => setIsAnonymous(!isAnonymous)}
             className={cn(
               "p-2 rounded-full transition-all",
@@ -122,9 +131,16 @@ export default function App() {
           >
             <Ghost size={20} />
           </button>
-              <div className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-bold text-accent overflow-hidden">
-            {user?.name?.[0] || 'U'}
-          </div>
+          <button
+            onClick={() => setActiveTab('profile')}
+            className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-bold text-accent overflow-hidden hover:border-accent/50 transition-all"
+          >
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+            ) : (
+              user?.name?.[0] || 'U'
+            )}
+          </button>
         </div>
       </header>
 
@@ -263,6 +279,14 @@ export default function App() {
           <Inbox userId={user.id} />
         )}
 
+        {activeTab === 'profile' && user && (
+          <InstagramProfile
+            userId={user.id}
+            currentUserId={user.id}
+            onEditProfile={() => setShowEditProfile(true)}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold">Settings</h2>
@@ -379,13 +403,22 @@ export default function App() {
         />
       )}
 
+      {showEditProfile && user && (
+        <EditProfileModal
+          user={user}
+          isOpen={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          onSave={handleProfileUpdate}
+        />
+      )}
+
         {/* Bottom Nav */}
-        <Dock 
+        <Dock
           items={[
             { icon: Home, label: 'Home', onClick: () => setActiveTab('home') },
             { icon: Film, label: 'Reels', onClick: () => setActiveTab('reels') },
             { icon: MessageSquare, label: 'Chat', onClick: () => setActiveTab('chat') },
-            { icon: Bell, label: 'Inbox', onClick: () => setActiveTab('inbox') },
+            { icon: User, label: 'Profile', onClick: () => setActiveTab('profile') },
             { icon: Settings, label: 'Settings', onClick: () => setActiveTab('settings') },
           ]}
           className="fixed bottom-0 left-0 right-0 z-40"

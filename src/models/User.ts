@@ -9,6 +9,10 @@ export interface IUser extends Document {
   gender?: string;
   department?: string;
   avatarUrl?: string;
+  bio?: string;
+  website?: string;
+  location?: string;
+  isVerified?: boolean;
   telegramChatId?: string;
   telegramAuthCode?: string;
   followingIds: mongoose.Types.ObjectId[];
@@ -28,6 +32,10 @@ const UserSchema = new Schema<IUser>(
     gender: { type: String, enum: ['male', 'female', 'other'] },
     department: { type: String },
     avatarUrl: { type: String },
+    bio: { type: String, maxlength: 150 },
+    website: { type: String },
+    location: { type: String },
+    isVerified: { type: Boolean, default: false },
     telegramChatId: { type: String },
     telegramAuthCode: { type: String },
     followingIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],

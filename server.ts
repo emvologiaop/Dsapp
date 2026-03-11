@@ -610,7 +610,11 @@ app.get('/api/users/:userId/profile', async (req, res) => {
       name: user.name,
       username: user.username,
       avatarUrl: user.avatarUrl || '',
+      bio: user.bio || '',
+      website: user.website || '',
+      location: user.location || '',
       department: user.department || '',
+      isVerified: user.isVerified || false,
       followersCount: user.followerIds.length,
       followingCount: user.followingIds.length,
       isFollowing,
@@ -618,6 +622,80 @@ app.get('/api/users/:userId/profile', async (req, res) => {
   } catch (error) {
     console.error('GET /api/users/:userId/profile error:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+app.put('/api/users/:userId/profile', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, username, bio, website, location, department } = req.body;
+
+    // Check if username is taken (if changed)
+    if (username) {
+      const existingUser = await User.findOne({ username: username.toLowerCase() });
+      if (existingUser && existingUser._id.toString() !== userId) {
+        return res.status(400).json({ error: 'Username already taken' });
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      {
+        name,
+        username: username?.toLowerCase(),
+        bio,
+        website,
+        location,
+        department,
+      },
+      { new: true }
+    ).lean();
+
+    if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+
+    res.json({
+      id: updatedUser._id.toString(),
+      name: updatedUser.name,
+      username: updatedUser.username,
+      avatarUrl: updatedUser.avatarUrl || '',
+      bio: updatedUser.bio || '',
+      website: updatedUser.website || '',
+      location: updatedUser.location || '',
+      department: updatedUser.department || '',
+      isVerified: updatedUser.isVerified || false,
+    });
+  } catch (error) {
+    console.error('PUT /api/users/:userId/profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+app.get('/api/users/:userId/posts', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const posts = await Post.find({ userId, isAnonymous: false })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.json(posts);
+  } catch (error) {
+    console.error('GET /api/users/:userId/posts error:', error);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+app.get('/api/users/:userId/reels', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const reels = await Reel.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(reels);
+  } catch (error) {
+    console.error('GET /api/users/:userId/reels error:', error);
+    res.status(500).json({ error: 'Failed to fetch reels' });
   }
 });
 
