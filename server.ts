@@ -17,6 +17,7 @@ import { Share } from './src/models/Share.js';
 import { Comment } from './src/models/Comment.js';
 import { Reel } from './src/models/Reel.js';
 import { VideoView } from './src/models/VideoView.js';
+import { Ad } from './src/models/Ad.js';
 import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
@@ -1513,6 +1514,172 @@ app.get('/api/admin/reels', authenticate, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('GET /api/admin/reels error:', error);
     res.status(500).json({ error: 'Failed to fetch reels' });
+  }
+});
+
+// ==================== Admin Ad Management Endpoints ====================
+
+// Get all ads (with pagination and filtering)
+app.get('/api/admin/ads', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+    const isActive = req.query.isActive === 'true' ? true : req.query.isActive === 'false' ? false : undefined;
+
+    const filter: any = {};
+    if (isActive !== undefined) {
+      filter.isActive = isActive;
+    }
+
+    const ads = await Ad.find(filter)
+      .populate('createdBy', 'name username email')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    const totalAds = await Ad.countDocuments(filter);
+
+    res.json({
+      ads,
+      totalPages: Math.ceil(totalAds / limit),
+      currentPage: page,
+      totalAds,
+    });
+  } catch (error) {
+    console.error('GET /api/admin/ads error:', error);
+    res.status(500).json({ error: 'Failed to fetch ads' });
+  }
+});
+
+// Get a single ad by ID
+app.get('/api/admin/ads/:adId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { adId } = req.params;
+    const ad = await Ad.findById(adId).populate('createdBy', 'name username email');
+
+    if (!ad) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    res.json(ad);
+  } catch (error) {
+    console.error('GET /api/admin/ads/:adId error:', error);
+    res.status(500).json({ error: 'Failed to fetch ad' });
+  }
+});
+
+// Create a new ad
+app.post('/api/admin/ads', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.query.userId as string;
+    const { title, content, imageUrl, linkUrl, isActive, startDate, endDate, targetAudience } = req.body;
+
+    if (!title || !content) {
+      return res.status(400).json({ error: 'Title and content are required' });
+    }
+
+    const ad = await Ad.create({
+      title,
+      content,
+      imageUrl,
+      linkUrl,
+      isActive: isActive !== undefined ? isActive : true,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      targetAudience: targetAudience || 'all',
+      createdBy: userId,
+    });
+
+    const populatedAd = await Ad.findById(ad._id).populate('createdBy', 'name username email');
+
+    res.status(201).json(populatedAd);
+  } catch (error) {
+    console.error('POST /api/admin/ads error:', error);
+    res.status(500).json({ error: 'Failed to create ad' });
+  }
+});
+
+// Update an ad
+app.put('/api/admin/ads/:adId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { adId } = req.params;
+    const { title, content, imageUrl, linkUrl, isActive, startDate, endDate, targetAudience } = req.body;
+
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (content !== undefined) updateData.content = content;
+    if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+    if (linkUrl !== undefined) updateData.linkUrl = linkUrl;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (startDate !== undefined) updateData.startDate = startDate ? new Date(startDate) : null;
+    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+    if (targetAudience !== undefined) updateData.targetAudience = targetAudience;
+
+    const ad = await Ad.findByIdAndUpdate(adId, updateData, { new: true })
+      .populate('createdBy', 'name username email');
+
+    if (!ad) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    res.json(ad);
+  } catch (error) {
+    console.error('PUT /api/admin/ads/:adId error:', error);
+    res.status(500).json({ error: 'Failed to update ad' });
+  }
+});
+
+// Delete an ad
+app.delete('/api/admin/ads/:adId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { adId } = req.params;
+
+    const ad = await Ad.findByIdAndDelete(adId);
+
+    if (!ad) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    res.json({ message: 'Ad deleted successfully' });
+  } catch (error) {
+    console.error('DELETE /api/admin/ads/:adId error:', error);
+    res.status(500).json({ error: 'Failed to delete ad' });
+  }
+});
+
+// Get ad statistics
+app.get('/api/admin/ads/stats/summary', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const totalAds = await Ad.countDocuments();
+    const activeAds = await Ad.countDocuments({ isActive: true });
+    const inactiveAds = await Ad.countDocuments({ isActive: false });
+
+    const adStats = await Ad.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalImpressions: { $sum: '$impressions' },
+          totalClicks: { $sum: '$clicks' },
+        }
+      }
+    ]);
+
+    const stats = adStats[0] || { totalImpressions: 0, totalClicks: 0 };
+
+    res.json({
+      totalAds,
+      activeAds,
+      inactiveAds,
+      totalImpressions: stats.totalImpressions,
+      totalClicks: stats.totalClicks,
+      clickThroughRate: stats.totalImpressions > 0
+        ? ((stats.totalClicks / stats.totalImpressions) * 100).toFixed(2)
+        : '0.00',
+    });
+  } catch (error) {
+    console.error('GET /api/admin/ads/stats/summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch ad statistics' });
   }
 });
 

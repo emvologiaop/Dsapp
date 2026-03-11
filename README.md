@@ -34,6 +34,26 @@ See [REELS_FEATURES.md](REELS_FEATURES.md) for complete reels documentation.
 See [VIDEO_STREAMING_ARCHITECTURE.md](VIDEO_STREAMING_ARCHITECTURE.md) for detailed explanation of how video streaming works.
 See [VIDEO_STREAMING_DIAGRAMS.md](VIDEO_STREAMING_DIAGRAMS.md) for visual flow diagrams.
 
+### Telegram Bot Integration 🤖
+- **Account Linking**: Link your DDU Social account to Telegram
+- **Real-time Notifications**: Receive notifications via Telegram
+- **Developer Contact**: Direct access to support via `/contact` and `/support` commands
+- **Advertisement System**: View and interact with platform ads via `/ads` command
+- **Password Reset**: Reset your password through the bot
+- **Help Commands**: Comprehensive `/help` system for easy navigation
+
+See [TELEGRAM_ADS.md](TELEGRAM_ADS.md) for complete Telegram ad system documentation.
+
+### Admin Panel 🛡️
+- **User Management**: View, ban, and unban users
+- **Content Moderation**: Delete inappropriate posts and reels
+- **Advertisement Management**: Create, edit, and track ads for Telegram bot
+- **Analytics Dashboard**: Platform statistics and insights
+- **Ad Performance Tracking**: Monitor impressions, clicks, and CTR
+
+See [ADMIN_SETUP.md](ADMIN_SETUP.md) for admin user setup instructions.
+See [ADMIN_PANEL.md](ADMIN_PANEL.md) for admin panel documentation.
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
