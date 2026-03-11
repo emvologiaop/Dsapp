@@ -17,6 +17,8 @@ export interface IReel extends Document {
   caption: string;
   isAnonymous: boolean;
   likedBy: mongoose.Types.ObjectId[];
+  taggedUsers: mongoose.Types.ObjectId[]; // Users tagged in this reel
+  mentions: string[]; // Array of mentioned usernames
   commentsCount: number;
   sharesCount: number;
   isDeleted: boolean;
@@ -44,6 +46,8 @@ const ReelSchema = new Schema<IReel>(
     caption: { type: String, default: '' },
     isAnonymous: { type: Boolean, default: false },
     likedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    taggedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }], // Tagged users
+    mentions: [{ type: String }], // Mentioned usernames for search optimization
     commentsCount: { type: Number, default: 0 },
     sharesCount: { type: Number, default: 0 },
     isDeleted: { type: Boolean, default: false },
@@ -59,5 +63,7 @@ ReelSchema.index({ isDeleted: 1, createdAt: -1 }); // For filtering non-deleted 
 ReelSchema.index({ createdAt: -1 }); // For recent reels feed (most important for infinite scroll)
 ReelSchema.index({ likedBy: 1 }); // For finding reels liked by a user
 ReelSchema.index({ duration: 1 }); // For filtering by video duration
+ReelSchema.index({ taggedUsers: 1, createdAt: -1 }); // For finding reels where user is tagged
+ReelSchema.index({ mentions: 1 }); // For searching reels by mentions
 
 export const Reel = mongoose.model<IReel>('Reel', ReelSchema);

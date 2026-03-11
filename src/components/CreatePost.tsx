@@ -1,9 +1,18 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Image as ImageIcon, Ghost, X, Loader2 } from 'lucide-react';
+import { Send, Image as ImageIcon, Ghost, X, Loader2, UserPlus } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
+import { MentionInput } from './MentionInput';
+import { UserTagSelector } from './UserTagSelector';
 import { cn } from '../lib/utils';
 import { uploadMultipleImagesToR2, compressImage, UploadProgress } from '../utils/r2Upload';
+
+interface User {
+  _id: string;
+  name: string;
+  username: string;
+  avatarUrl?: string;
+}
 
 interface CreatePostProps {
   user: any;
@@ -18,6 +27,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
+  const [taggedUsers, setTaggedUsers] = useState<User[]>([]);
+  const [showTagSelector, setShowTagSelector] = useState(false);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -79,7 +90,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
           userId: user.id,
           content,
           isAnonymous,
-          mediaUrls
+          mediaUrls,
+          taggedUsers: taggedUsers.map(u => u._id)
         })
       });
 
@@ -87,6 +99,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         setContent('');
         setSelectedImages([]);
         setImagePreviews([]);
+        setTaggedUsers([]);
+        setShowTagSelector(false);
         setUploadProgress(100);
         onPostCreated();
       } else {
@@ -107,12 +121,16 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         <div className="w-10 h-10 rounded-full bg-muted shrink-0 flex items-center justify-center">
           {isAnonymous ? <Ghost size={20} className="text-muted-foreground" /> : (user?.name?.[0] || 'U')}
         </div>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "What's happening on campus?"}
-          className="w-full bg-transparent outline-none text-sm py-2 resize-none h-20 text-foreground placeholder-muted-foreground"
-        />
+        <div className="flex-1">
+          <MentionInput
+            value={content}
+            onChange={setContent}
+            placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "What's happening on campus?"}
+            textareaClassName="border-0 focus:ring-0 p-0"
+            rows={3}
+            disabled={isPosting}
+          />
+        </div>
       </div>
 
       {imagePreviews.length > 0 && (
@@ -131,6 +149,20 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         </div>
       )}
 
+      {/* Tag selector - only show if not anonymous */}
+      {!isAnonymous && (
+        <div className="space-y-2">
+          {showTagSelector && (
+            <UserTagSelector
+              selectedUsers={taggedUsers}
+              onUsersChange={setTaggedUsers}
+              maxTags={20}
+              placeholder="Search and tag people..."
+            />
+          )}
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-2 border-t border-border">
         <div className="flex items-center gap-4">
           <label className="text-muted-foreground hover:text-primary transition-all cursor-pointer">
@@ -141,9 +173,21 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
               multiple
               onChange={handleImageSelect}
               className="hidden"
-              disabled={imagePreviews.length >= 10}
+              disabled={imagePreviews.length >= 10 || isPosting}
             />
           </label>
+          {!isAnonymous && (
+            <button
+              onClick={() => setShowTagSelector(!showTagSelector)}
+              className={cn(
+                'text-muted-foreground hover:text-primary transition-all',
+                showTagSelector && 'text-primary'
+              )}
+              disabled={isPosting}
+            >
+              <UserPlus size={20} />
+            </button>
+          )}
           {imagePreviews.length > 0 && (
             <span className="text-xs text-muted-foreground">{imagePreviews.length}/10</span>
           )}
