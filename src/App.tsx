@@ -15,7 +15,7 @@ import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
-import { FeatureIdeas } from './components/FeatureIdeas';
+// Removed FeatureIdeas component - voting section removed per requirements
 import { AdminDashboard } from './components/AdminDashboard';
 import { InstagramProfile } from './components/InstagramProfile';
 import { EditProfileModal } from './components/EditProfileModal';
@@ -36,6 +36,7 @@ export default function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -60,8 +61,13 @@ export default function App() {
     const savedUser = localStorage.getItem('ddu_user');
     if (savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
         setIsOnboarded(true);
+        // Load telegram notifications preference
+        if (parsedUser.telegramNotificationsEnabled !== undefined) {
+          setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
+        }
       } catch (e) {
         localStorage.removeItem('ddu_user');
       }
@@ -115,6 +121,26 @@ export default function App() {
     const mergedUser = { ...user, ...updatedUser };
     setUser(mergedUser);
     localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
+  };
+
+  const handleTelegramNotificationsToggle = async () => {
+    try {
+      const newValue = !telegramNotificationsEnabled;
+      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newValue })
+      });
+
+      if (response.ok) {
+        setTelegramNotificationsEnabled(newValue);
+        const updatedUser = { ...user, telegramNotificationsEnabled: newValue };
+        setUser(updatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Failed to toggle Telegram notifications:', error);
+    }
   };
 
   if (!isOnboarded) {
@@ -414,20 +440,29 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <Bell size={18} className="text-accent" />
                     <div>
-                      <p className="text-sm font-medium">Telegram Sync</p>
-                      <p className="text-[10px] text-black/40">Mirror DMs to Telegram</p>
+                      <p className="text-sm font-medium">Telegram Notifications</p>
+                      <p className="text-[10px] text-black/40">Receive notifications via Telegram bot</p>
                     </div>
                   </div>
-                  <button className="w-12 h-6 bg-accent rounded-full relative transition-all">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
+                  <button
+                    onClick={handleTelegramNotificationsToggle}
+                    className={cn(
+                      "w-12 h-6 rounded-full relative transition-all",
+                      telegramNotificationsEnabled ? "bg-accent" : "bg-black/10"
+                    )}
+                  >
+                    <div className={cn(
+                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                      telegramNotificationsEnabled ? "right-1" : "left-1"
+                    )} />
                   </button>
                 </div>
+                {!user?.telegramChatId && (
+                  <div className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                    ⚠️ Link your Telegram account first to receive notifications
+                  </div>
+                )}
               </FriendlyCard>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Roadmap</h3>
-              <FeatureIdeas />
             </div>
 
             <div className="pt-4 space-y-4">
@@ -441,15 +476,24 @@ export default function App() {
                 <LogOut size={18} />
                 Logout Account
               </button>
-              
-              <div className="text-center">
-                <a 
-                  href="https://t.me/Dev_Envologia" 
-                  target="_blank" 
+
+              <div className="text-center space-y-2">
+                <a
+                  href="https://t.me/dev_envologia"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
                 >
-                  Report Bug to @Dev_Envologia
+                  🐛 Report Bug to @dev_envologia
+                </a>
+                <br />
+                <a
+                  href="https://t.me/dev_envologia"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
+                >
+                  💡 Suggest Feature to @dev_envologia
                 </a>
               </div>
             </div>
