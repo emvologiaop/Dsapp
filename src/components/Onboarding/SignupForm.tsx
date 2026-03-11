@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, ArrowRight, CheckCircle2, Camera, Loader2, Plus } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
 import { Input } from '../ui/Input';
 import { cn } from '../../lib/utils';
@@ -21,14 +21,62 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
     password: '',
     department: ''
   });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const checkUsernameAvailability = useCallback(async (username: string) => {
+    if (!username || username.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+    setCheckingUsername(true);
+    try {
+      const res = await fetch(`/api/auth/check-username?username=${encodeURIComponent(username.toLowerCase())}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUsernameAvailable(data.available);
+      }
+    } catch {
+      setUsernameAvailable(null);
+    } finally {
+      setCheckingUsername(false);
+    }
+  }, []);
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setErrors(prev => ({ ...prev, avatar: 'Image must be under 5MB' }));
+        return;
+      }
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setAvatarPreview(reader.result as string);
+      reader.readAsDataURL(file);
+      setErrors(prev => { const { avatar, ...rest } = prev; return rest; });
+    }
+  };
 
   const validateStep = () => {
     const newErrors: Record<string, string> = {};
     if (step === 1) {
       if (!formData.name) newErrors.name = "Name is required";
-      if (!formData.username) newErrors.username = "Username is required";
+      if (!formData.username) {
+        newErrors.username = "Username is required";
+      } else {
+        const usernameRegex = /^[a-zA-Z0-9_.]{3,20}$/;
+        if (!usernameRegex.test(formData.username)) {
+          newErrors.username = "3-20 chars: letters, numbers, _ and . only";
+        } else if (usernameAvailable === false) {
+          newErrors.username = "Username is already taken";
+        }
+      }
+      if (!avatarFile) newErrors.avatar = "Profile picture is required";
     } else if (step === 2) {
       if (!formData.age) newErrors.age = "Age is required";
       if (!formData.gender) newErrors.gender = "Gender is required";
@@ -51,10 +99,19 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
         setStep(step + 1);
       } else {
         try {
+          const submitData = new FormData();
+          submitData.append('name', formData.name);
+          submitData.append('username', formData.username.toLowerCase());
+          submitData.append('email', formData.email);
+          submitData.append('password', formData.password);
+          if (formData.age) submitData.append('age', formData.age);
+          if (formData.gender) submitData.append('gender', formData.gender);
+          if (formData.department) submitData.append('department', formData.department);
+          if (avatarFile) submitData.append('avatar', avatarFile);
+
           const response = await fetch('/api/auth/signup', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
+            body: submitData
           });
           
           let data;
@@ -84,11 +141,17 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (errors[e.target.name]) {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+    if (errors[name]) {
       const newErrors = { ...errors };
-      delete newErrors[e.target.name];
+      delete newErrors[name];
       setErrors(newErrors);
+    }
+    if (name === 'username') {
+      const normalized = value.toLowerCase();
+      setFormData(prev => ({ ...prev, username: normalized }));
+      checkUsernameAvailability(normalized);
     }
   };
 
@@ -102,6 +165,30 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
             exit={{ opacity: 0, x: -20 }}
             className="space-y-4"
           >
+            {/* Profile Picture Upload */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full bg-muted border-2 border-dashed border-primary/30 flex items-center justify-center overflow-hidden">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-8 h-8 text-muted-foreground" />
+                  )}
+                </div>
+                <label className="absolute bottom-0 right-0 w-8 h-8 bg-primary rounded-full flex items-center justify-center cursor-pointer shadow-lg">
+                  <Plus className="w-4 h-4 text-primary-foreground" />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">Add profile photo *</p>
+              {errors.avatar && <p className="text-red-400 text-xs">{errors.avatar}</p>}
+            </div>
+
             <div className="space-y-2">
               <Input
                 label="Full Name"
@@ -120,6 +207,22 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                 onChange={handleChange}
                 icon={<AtSign className="w-5 h-5" />}
               />
+              {formData.username.length >= 3 && (
+                <div className="flex items-center gap-1 ml-1">
+                  {checkingUsername ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                  ) : usernameAvailable === true ? (
+                    <p className="text-green-500 text-xs flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Username available
+                    </p>
+                  ) : usernameAvailable === false ? (
+                    <p className="text-red-400 text-xs">Username is already taken</p>
+                  ) : null}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground ml-1">
+                Lowercase letters, numbers, underscores & periods only
+              </p>
               {errors.username && <p className="text-red-400 text-xs ml-1">{errors.username}</p>}
             </div>
           </motion.div>

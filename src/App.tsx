@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -15,7 +15,7 @@ import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
-// Removed FeatureIdeas component - voting section removed per requirements
+
 import { AdminDashboard } from './components/AdminDashboard';
 import { InstagramProfile } from './components/InstagramProfile';
 import { EditProfileModal } from './components/EditProfileModal';
@@ -364,7 +364,7 @@ export default function App() {
 
             {user?.role === 'admin' && (
               <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Admin</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Admin</h3>
                 <FriendlyCard
                   onClick={() => setShowAdminDashboard(true)}
                   className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
@@ -372,100 +372,151 @@ export default function App() {
                   <div className="p-3 bg-primary/20 rounded-lg">
                     <Shield size={20} className="text-primary" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <p className="font-bold">Admin Dashboard</p>
                     <p className="text-xs text-muted-foreground">Manage users, posts, and reels</p>
                   </div>
+                  <ChevronRight size={16} className="text-muted-foreground" />
                 </FriendlyCard>
               </div>
             )}
 
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Profile</h3>
-              <FriendlyCard className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-2xl font-bold text-accent">
-                  {user?.name?.[0] || 'U'}
+            {/* Account Section */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Account</h3>
+              <FriendlyCard className="divide-y divide-border">
+                <div
+                  onClick={() => setShowEditProfile(true)}
+                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <div className="w-14 h-14 rounded-full bg-muted border border-border flex items-center justify-center text-xl font-bold overflow-hidden">
+                    {user?.avatarUrl ? (
+                      <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-primary">{user?.name?.[0] || 'U'}</span>
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-bold">{user?.name || 'User'}</p>
+                    <p className="text-sm text-muted-foreground">@{user?.username || 'username'}</p>
+                  </div>
+                  <ChevronRight size={16} className="text-muted-foreground" />
                 </div>
-                <div>
-                  <p className="font-bold text-lg">{user?.name || 'User'}</p>
-                  <p className="text-sm text-white/40">@{user?.username || 'username'}</p>
+                <div
+                  onClick={() => setActiveTab('profile')}
+                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <UserCog size={20} className="text-muted-foreground" />
+                  <span className="text-sm flex-1">Edit Profile</span>
+                  <ChevronRight size={16} className="text-muted-foreground" />
                 </div>
               </FriendlyCard>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Data & Privacy</h3>
-              <FriendlyCard className="space-y-6">
-                <div className="flex items-center justify-between">
+            {/* Privacy & Security */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Privacy & Security</h3>
+              <FriendlyCard className="space-y-0 divide-y divide-border">
+                <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <Zap size={18} className="text-accent" />
-                    <div>
-                      <p className="text-sm font-medium">Lite Mode (240p)</p>
-                      <p className="text-[10px] text-black/40">Save data on campus Wi-Fi</p>
-                    </div>
-                  </div>
-                  <button className="w-12 h-6 bg-accent rounded-full relative transition-all">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full" />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Shield size={18} className="text-purple-400" />
+                    <Eye size={18} className="text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Anonymous Mode</p>
-                      <p className="text-[10px] text-black/40">Post as Ghost</p>
+                      <p className="text-[10px] text-muted-foreground">Post as Ghost</p>
                     </div>
                   </div>
                   <button 
                     onClick={() => setIsAnonymous(!isAnonymous)}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                      isAnonymous ? "bg-accent" : "bg-black/10"
+                      isAnonymous ? "bg-primary" : "bg-muted"
                     )}
                   >
                     <div className={cn(
-                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm",
                       isAnonymous ? "right-1" : "left-1"
                     )} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <Lock size={18} className="text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Lite Mode (240p)</p>
+                      <p className="text-[10px] text-muted-foreground">Save data on campus Wi-Fi</p>
+                    </div>
+                  </div>
+                  <button className="w-12 h-6 bg-muted rounded-full relative transition-all">
+                    <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm" />
                   </button>
                 </div>
               </FriendlyCard>
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Integrations</h3>
-              <FriendlyCard className="space-y-6">
-                <div className="flex items-center justify-between">
+            {/* Notifications */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Notifications</h3>
+              <FriendlyCard className="space-y-0 divide-y divide-border">
+                <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <Bell size={18} className="text-accent" />
+                    <Bell size={18} className="text-muted-foreground" />
                     <div>
                       <p className="text-sm font-medium">Telegram Notifications</p>
-                      <p className="text-[10px] text-black/40">Receive notifications via Telegram bot</p>
+                      <p className="text-[10px] text-muted-foreground">Receive notifications via Telegram bot</p>
                     </div>
                   </div>
                   <button
                     onClick={handleTelegramNotificationsToggle}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                      telegramNotificationsEnabled ? "bg-accent" : "bg-black/10"
+                      telegramNotificationsEnabled ? "bg-primary" : "bg-muted"
                     )}
                   >
                     <div className={cn(
-                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                      "absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm",
                       telegramNotificationsEnabled ? "right-1" : "left-1"
                     )} />
                   </button>
                 </div>
                 {!user?.telegramChatId && (
-                  <div className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-                    ⚠️ Link your Telegram account first to receive notifications
+                  <div className="p-4">
+                    <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
+                      ⚠️ Link your Telegram account first to receive notifications. Open our bot and use your verification code.
+                    </div>
                   </div>
                 )}
               </FriendlyCard>
             </div>
 
-            <div className="pt-4 space-y-4">
+            {/* Help & Support */}
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Help & Support</h3>
+              <FriendlyCard className="space-y-0 divide-y divide-border">
+                <a
+                  href="https://t.me/dev_envologia"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <Flag size={18} className="text-muted-foreground" />
+                  <span className="text-sm flex-1">Report a Bug</span>
+                  <ChevronRight size={16} className="text-muted-foreground" />
+                </a>
+                <a
+                  href="https://t.me/dev_envologia"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <HelpCircle size={18} className="text-muted-foreground" />
+                  <span className="text-sm flex-1">Suggest a Feature</span>
+                  <ChevronRight size={16} className="text-muted-foreground" />
+                </a>
+              </FriendlyCard>
+            </div>
+
+            {/* Logout */}
+            <div className="pt-2">
               <button 
                 onClick={() => {
                   localStorage.removeItem('ddu_user');
@@ -474,28 +525,12 @@ export default function App() {
                 className="w-full py-4 bg-red-500/10 border border-red-500/20 text-red-400 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 <LogOut size={18} />
-                Logout Account
+                Log Out
               </button>
 
-              <div className="text-center space-y-2">
-                <a
-                  href="https://t.me/dev_envologia"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
-                >
-                  🐛 Report Bug to @dev_envologia
-                </a>
-                <br />
-                <a
-                  href="https://t.me/dev_envologia"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
-                >
-                  💡 Suggest Feature to @dev_envologia
-                </a>
-              </div>
+              <p className="text-center text-[10px] text-muted-foreground mt-4">
+                Contact admin: <a href="https://t.me/dev_envologia" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">@dev_envologia</a>
+              </p>
             </div>
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreVertical, Edit2, Trash2, X } from 'lucide-react';
+import { MoreVertical, Edit2, Trash2, X, Flag } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
 
 interface PostOptionsProps {
@@ -23,13 +23,14 @@ export function PostOptions({
 }: PostOptionsProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [editContent, setEditContent] = useState(initialContent);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
+  const [reportSuccess, setReportSuccess] = useState(false);
 
-  // Only show if user owns the post
-  if (userId !== postOwnerId) {
-    return null;
-  }
+  const isOwner = userId === postOwnerId;
 
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this post?')) return;
@@ -86,6 +87,37 @@ export function PostOptions({
     }
   };
 
+  const handleReport = async () => {
+    if (!reportReason) return;
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporterId: userId,
+          type: 'post',
+          targetId: postId,
+          reason: reportReason,
+          description: reportDescription,
+        }),
+      });
+      if (response.ok) {
+        setReportSuccess(true);
+        setTimeout(() => {
+          setShowReportModal(false);
+          setReportSuccess(false);
+          setReportReason('');
+          setReportDescription('');
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Failed to report post:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
       <div className="relative">
@@ -99,23 +131,39 @@ export function PostOptions({
 
         {showMenu && (
           <div className="absolute right-0 top-8 bg-background border border-border rounded-lg shadow-lg z-10 min-w-[150px]">
-            <button
-              onClick={() => {
-                setShowEditModal(true);
-                setShowMenu(false);
-              }}
-              className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm"
-            >
-              <Edit2 size={16} />
-              Edit Post
-            </button>
-            <button
-              onClick={handleDelete}
-              className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm text-red-500"
-            >
-              <Trash2 size={16} />
-              Delete Post
-            </button>
+            {isOwner && (
+              <>
+                <button
+                  onClick={() => {
+                    setShowEditModal(true);
+                    setShowMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm"
+                >
+                  <Edit2 size={16} />
+                  Edit Post
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm text-red-500"
+                >
+                  <Trash2 size={16} />
+                  Delete Post
+                </button>
+              </>
+            )}
+            {!isOwner && (
+              <button
+                onClick={() => {
+                  setShowReportModal(true);
+                  setShowMenu(false);
+                }}
+                className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm text-red-500"
+              >
+                <Flag size={16} />
+                Report Post
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -158,6 +206,75 @@ export function PostOptions({
                 {isSubmitting ? 'Saving...' : 'Save'}
               </button>
             </div>
+          </FriendlyCard>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <FriendlyCard className="max-w-md w-full p-6">
+            {reportSuccess ? (
+              <div className="text-center py-6">
+                <p className="text-lg font-bold text-green-500">✓ Report Submitted</p>
+                <p className="text-sm text-muted-foreground mt-2">Thank you for helping keep DDU Social safe.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-bold">Report Post</h3>
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="p-1 hover:bg-muted rounded transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <p className="text-sm text-muted-foreground mb-4">Why are you reporting this post?</p>
+
+                <div className="space-y-2 mb-4">
+                  {['Spam', 'Harassment', 'Inappropriate content', 'Misinformation', 'Other'].map((reason) => (
+                    <button
+                      key={reason}
+                      onClick={() => setReportReason(reason)}
+                      className={`w-full text-left px-4 py-3 rounded-lg border transition-all text-sm ${
+                        reportReason === reason
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border hover:bg-muted'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={reportDescription}
+                  onChange={(e) => setReportDescription(e.target.value)}
+                  className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none text-sm"
+                  rows={3}
+                  placeholder="Additional details (optional)"
+                  maxLength={500}
+                />
+
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => setShowReportModal(false)}
+                    className="flex-1 px-4 py-2 bg-muted rounded-lg hover:bg-muted/80 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleReport}
+                    className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 text-sm"
+                    disabled={!reportReason || isSubmitting}
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </>
+            )}
           </FriendlyCard>
         </div>
       )}

@@ -52,7 +52,7 @@ describe('Input Validation and Sanitization', () => {
     it('should accept valid usernames', () => {
       expect(isValidUsername('user123')).toBe(true);
       expect(isValidUsername('test_user')).toBe(true);
-      expect(isValidUsername('user-name')).toBe(true);
+      expect(isValidUsername('user.name')).toBe(true);
     });
 
     it('should reject usernames that are too short', () => {
@@ -67,6 +67,7 @@ describe('Input Validation and Sanitization', () => {
       expect(isValidUsername('user@name')).toBe(false);
       expect(isValidUsername('user name')).toBe(false);
       expect(isValidUsername('user!name')).toBe(false);
+      expect(isValidUsername('user-name')).toBe(false);
     });
   });
 

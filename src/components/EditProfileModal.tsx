@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Camera, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -27,6 +27,10 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -38,8 +42,50 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         location: user.location || '',
         department: user.department || '',
       });
+      setAvatarPreview(null);
+      setAvatarFile(null);
     }
   }, [user]);
+
+  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image must be under 5MB');
+        return;
+      }
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setAvatarPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAvatarUpload = async () => {
+    if (!avatarFile || !user?.id) return;
+    setUploadingAvatar(true);
+    try {
+      const formDataUpload = new FormData();
+      formDataUpload.append('avatar', avatarFile);
+      const response = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PUT',
+        body: formDataUpload,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        onSave({ ...user, avatarUrl: data.avatarUrl });
+        setAvatarFile(null);
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to upload photo');
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      setError('Failed to upload photo');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,10 +93,18 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setIsLoading(true);
 
     try {
+      // Upload avatar first if changed
+      if (avatarFile) {
+        await handleAvatarUpload();
+      }
+
       const response = await fetch(`/api/users/${user.id}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          username: formData.username.toLowerCase(),
+        }),
       });
 
       if (response.ok) {
@@ -71,7 +125,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: name === 'username' ? value.toLowerCase() : value }));
   };
 
   if (!isOpen) return null;
@@ -114,7 +168,9 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 <div className="flex items-center gap-6">
                   <div className="relative">
                     <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-[3px] border-primary/20 shadow-md">
-                      {user?.avatarUrl ? (
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : user?.avatarUrl ? (
                         <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
                       ) : (
                         <span className="text-primary">{user?.name?.[0] || 'U'}</span>
@@ -122,14 +178,27 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     </div>
                   </div>
                   <div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarSelect}
+                      className="hidden"
+                    />
                     <button
                       type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingAvatar}
                       className="text-sm font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-2"
                     >
-                      <Camera className="w-4 h-4" />
+                      {uploadingAvatar ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Camera className="w-4 h-4" />
+                      )}
                       Change Photo
                     </button>
-                    <p className="text-xs text-muted-foreground mt-1">Coming soon to DDU Social</p>
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG or WebP, max 5MB</p>
                   </div>
                 </div>
 
@@ -160,7 +229,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     required
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Your unique DDU Social handle
+                    Lowercase letters, numbers, underscores & periods only
                   </p>
                 </div>
 
