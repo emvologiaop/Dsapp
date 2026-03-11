@@ -18,6 +18,7 @@ import { Comment } from './src/models/Comment.js';
 import { Reel } from './src/models/Reel.js';
 import { VideoView } from './src/models/VideoView.js';
 import { Ad } from './src/models/Ad.js';
+import { Report } from './src/models/Report.js';
 import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
@@ -542,6 +543,143 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
   } catch (error) {
     console.error('POST /api/posts/:postId/comments error:', error);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ── Comment Replies Routes ────────────────────────────────────────────────────
+
+// Get replies to a specific comment
+app.get('/api/comments/:commentId/replies', async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const replies = await Comment.find({ parentCommentId: commentId })
+      .sort({ createdAt: 1 })
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+    res.json(replies);
+  } catch (error) {
+    console.error('GET /api/comments/:commentId/replies error:', error);
+    res.status(500).json({ error: 'Failed to fetch replies' });
+  }
+});
+
+// Post a reply to a comment
+app.post('/api/comments/:commentId/reply', async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { userId, content, isAnonymous } = req.body;
+    if (!userId || !content) {
+      return res.status(400).json({ error: 'userId and content are required' });
+    }
+
+    const parentComment = await Comment.findById(commentId);
+    if (!parentComment) {
+      return res.status(404).json({ error: 'Parent comment not found' });
+    }
+
+    const reply = await Comment.create({
+      postId: parentComment.postId,
+      userId,
+      content,
+      isAnonymous: Boolean(isAnonymous),
+      parentCommentId: commentId
+    });
+
+    // Increment reply count on parent comment
+    await Comment.findByIdAndUpdate(commentId, { $inc: { replyCount: 1 } });
+
+    const populated = await Comment.findById(reply._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    // Create notification for parent comment author
+    if (parentComment.userId.toString() !== userId) {
+      const replier = await User.findById(userId).lean();
+      if (replier) {
+        const notification = await Notification.create({
+          userId: parentComment.userId,
+          type: 'comment',
+          content: `${replier.name} replied to your comment`,
+          relatedUserId: userId,
+          relatedPostId: parentComment.postId,
+        });
+        io.to(`user_${parentComment.userId.toString()}`).emit('new_notification', {
+          ...notification.toObject(),
+          id: notification._id.toString()
+        });
+      }
+    }
+
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/comments/:commentId/reply error:', error);
+    res.status(500).json({ error: 'Failed to add reply' });
+  }
+});
+
+// ── Report Routes ──────────────────────────────────────────────────────────────
+
+// Create a report (post, user, bug, or suggestion)
+app.post('/api/reports', async (req, res) => {
+  try {
+    const { reporterId, type, targetId, reason, description } = req.body;
+    if (!reporterId || !type || !reason) {
+      return res.status(400).json({ error: 'reporterId, type, and reason are required' });
+    }
+
+    const report = await Report.create({
+      reporterId,
+      type,
+      targetId,
+      reason,
+      description
+    });
+
+    res.status(201).json(report);
+  } catch (error) {
+    console.error('POST /api/reports error:', error);
+    res.status(500).json({ error: 'Failed to create report' });
+  }
+});
+
+// Get reports for a user (their own reports)
+app.get('/api/reports/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const reports = await Report.find({ reporterId: userId })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    res.json(reports);
+  } catch (error) {
+    console.error('GET /api/reports/:userId error:', error);
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+// Update Telegram notification preference
+app.put('/api/users/:userId/telegram-notifications', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { telegramNotificationsEnabled: enabled },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ telegramNotificationsEnabled: user.telegramNotificationsEnabled });
+  } catch (error) {
+    console.error('PUT /api/users/:userId/telegram-notifications error:', error);
+    res.status(500).json({ error: 'Failed to update notification preference' });
   }
 });
 

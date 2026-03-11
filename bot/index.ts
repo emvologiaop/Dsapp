@@ -13,7 +13,7 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 
 // Admin Configuration
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'Envologia01@gmail.com';
-const ADMIN_TELEGRAM_USERNAME = process.env.ADMIN_TELEGRAM_USERNAME || '@Envologia';
+const ADMIN_TELEGRAM_USERNAME = process.env.ADMIN_TELEGRAM_USERNAME || '@dev_envologia';
 const ADMIN_TELEGRAM_USER_ID = process.env.ADMIN_TELEGRAM_USER_ID || '6882100039';
 
 // Helper function to get user from telegram chat ID
@@ -133,8 +133,8 @@ export function initBot(io?: any) {
       "*Other:*\n" +
       "/ads - View advertisements\n" +
       "/contact - Contact developer\n" +
-      "/support - Get technical support\n\n" +
-      "💡 Tip: Use the interactive menu for quick access!",
+      "/support - Report bugs or suggest features\n\n" +
+      "💡 Tip: Use /support to report bugs or share feature ideas directly with the dev team!",
       { parse_mode: 'Markdown' }
     );
   });
@@ -517,26 +517,33 @@ export function initBot(io?: any) {
     );
   });
 
-  // Support command
+  // Support command - Report bugs or add suggestions
   bot.onText(/\/support/, (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(
       chatId,
       "🆘 *Technical Support*\n\n" +
-      "Experiencing technical issues?\n\n" +
-      `Contact ${ADMIN_TELEGRAM_USERNAME} for:\n` +
-      "• Bug reports\n" +
-      "• Technical problems\n" +
-      "• Feature requests\n" +
-      "• Account issues\n\n" +
-      `Email: ${ADMIN_EMAIL}`,
+      "Need help or want to contribute?\n\n" +
+      `📞 Contact ${ADMIN_TELEGRAM_USERNAME} for:\n` +
+      "• 🐛 Bug reports\n" +
+      "• 💡 Feature suggestions\n" +
+      "• 🔧 Technical problems\n" +
+      "• 🔐 Account issues\n\n" +
+      "Use the buttons below to directly reach the developer:",
       {
         parse_mode: 'Markdown',
         reply_markup: {
-          inline_keyboard: [[
-            { text: '📧 Email Support', url: `mailto:${ADMIN_EMAIL}` },
-            { text: '💬 Telegram', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
-          ]]
+          inline_keyboard: [
+            [
+              { text: '🐛 Report Bug', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
+            ],
+            [
+              { text: '💡 Suggest Feature', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
+            ],
+            [
+              { text: '💬 General Support', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
+            ]
+          ]
         }
       }
     );
