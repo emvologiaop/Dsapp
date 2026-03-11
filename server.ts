@@ -19,6 +19,7 @@ import { Reel } from './src/models/Reel.js';
 import { VideoView } from './src/models/VideoView.js';
 import { Ad } from './src/models/Ad.js';
 import { Report } from './src/models/Report.js';
+import { Story } from './src/models/Story.js';
 import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
@@ -386,17 +387,51 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl, mediaUrls } = req.body;
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
+
+    // Extract mentions from content
+    const mentions = extractMentions(content);
+
     const post = await Post.create({
       userId,
       content,
       isAnonymous: Boolean(isAnonymous),
       mediaUrl,
-      mediaUrls: mediaUrls || []
+      mediaUrls: mediaUrls || [],
+      taggedUsers: taggedUsers || [],
+      mentions
     });
+
+    // Send mention notifications
+    if (mentions.length > 0 && !isAnonymous) {
+      await sendMentionNotifications(mentions, userId, post._id.toString(), 'post');
+    }
+
+    // Send tag notifications to tagged users
+    if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
+      const tagger = await User.findById(userId).lean();
+      if (tagger) {
+        for (const taggedUserId of taggedUsers) {
+          if (taggedUserId !== userId) {
+            const notification = await Notification.create({
+              userId: taggedUserId,
+              type: 'tag',
+              content: `${tagger.name} tagged you in a post`,
+              relatedUserId: userId,
+              relatedPostId: post._id,
+            });
+            io.to(`user_${taggedUserId}`).emit('new_notification', {
+              ...notification.toObject(),
+              id: notification._id.toString(),
+            });
+          }
+        }
+      }
+    }
+
     const populated = await Post.findById(post._id).populate('userId', 'name username avatarUrl').lean();
     res.status(201).json(populated);
   } catch (error) {
@@ -1057,17 +1092,51 @@ app.get('/api/reels', async (req, res) => {
 
 app.post('/api/reels', async (req, res) => {
   try {
-    const { userId, caption, videoData, isAnonymous } = req.body;
+    const { userId, caption, videoData, isAnonymous, taggedUsers } = req.body;
     if (!userId || !videoData) {
       return res.status(400).json({ error: 'userId and videoData are required' });
     }
+
+    // Extract mentions from caption
+    const mentions = caption ? extractMentions(caption) : [];
+
     // Store base64 data URL as the video URL (suitable for moderate-size videos)
     const reel = await Reel.create({
       userId,
       videoUrl: videoData,
       caption: caption || '',
       isAnonymous: Boolean(isAnonymous),
+      taggedUsers: taggedUsers || [],
+      mentions
     });
+
+    // Send mention notifications
+    if (mentions.length > 0 && !isAnonymous) {
+      await sendMentionNotifications(mentions, userId, reel._id.toString(), 'reel');
+    }
+
+    // Send tag notifications to tagged users
+    if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
+      const tagger = await User.findById(userId).lean();
+      if (tagger) {
+        for (const taggedUserId of taggedUsers) {
+          if (taggedUserId !== userId) {
+            const notification = await Notification.create({
+              userId: taggedUserId,
+              type: 'tag',
+              content: `${tagger.name} tagged you in a reel`,
+              relatedUserId: userId,
+              relatedPostId: reel._id,
+            });
+            io.to(`user_${taggedUserId}`).emit('new_notification', {
+              ...notification.toObject(),
+              id: notification._id.toString(),
+            });
+          }
+        }
+      }
+    }
+
     const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
     res.status(201).json(populated);
   } catch (error) {
@@ -1425,6 +1494,319 @@ app.get('/api/search', async (req, res) => {
   } catch (error) {
     console.error('GET /api/search error:', error);
     res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// ── Helper Functions ───────────────────────────────────────────────────────────
+
+// Extract @mentions from text
+function extractMentions(text: string): string[] {
+  const mentionRegex = /@(\w+)/g;
+  const mentions: string[] = [];
+  let match;
+  while ((match = mentionRegex.exec(text)) !== null) {
+    mentions.push(match[1].toLowerCase());
+  }
+  return [...new Set(mentions)]; // Remove duplicates
+}
+
+// Send mention notifications
+async function sendMentionNotifications(
+  mentionerUserId: string,
+  mentions: string[],
+  contentType: 'post' | 'comment' | 'reel',
+  contentId: string,
+  io: any
+) {
+  try {
+    // Find all mentioned users
+    const mentionedUsers = await User.find({ username: { $in: mentions } }).lean();
+    const mentioner = await User.findById(mentionerUserId).lean();
+
+    if (!mentioner) return;
+
+    // Create notifications for each mentioned user
+    for (const user of mentionedUsers) {
+      if (user._id.toString() === mentionerUserId) continue; // Don't notify self
+
+      const notification = await Notification.create({
+        userId: user._id,
+        type: 'mention',
+        content: `${mentioner.name} mentioned you in a ${contentType}`,
+        relatedUserId: mentionerUserId,
+        relatedPostId: contentType !== 'comment' ? contentId : undefined,
+      });
+
+      // Emit real-time notification
+      io.to(`user_${user._id.toString()}`).emit('new_notification', {
+        ...notification.toObject(),
+        id: notification._id.toString()
+      });
+    }
+  } catch (error) {
+    console.error('Error sending mention notifications:', error);
+  }
+}
+
+// ── Story Routes ───────────────────────────────────────────────────────────────
+
+// Get active stories from followed users and own stories
+app.get('/api/stories', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const user = await User.findById(userId).lean();
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Get stories from followed users + own stories
+    const followedIds = [...user.followingIds, userId];
+    const now = new Date();
+
+    const stories = await Story.find({
+      userId: { $in: followedIds },
+      isActive: true,
+      expiresAt: { $gt: now }
+    })
+      .populate('userId', 'name username avatarUrl')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Group stories by user
+    const storiesByUser = stories.reduce((acc: any, story: any) => {
+      const userId = story.userId._id.toString();
+      if (!acc[userId]) {
+        acc[userId] = {
+          user: story.userId,
+          stories: [],
+          hasViewed: false
+        };
+      }
+      acc[userId].stories.push(story);
+      // Check if current user has viewed all stories from this user
+      const hasViewedAll = acc[userId].stories.every((s: any) =>
+        s.views.some((v: any) => v.toString() === userId)
+      );
+      acc[userId].hasViewed = hasViewedAll;
+      return acc;
+    }, {});
+
+    res.json(Object.values(storiesByUser));
+  } catch (error) {
+    console.error('GET /api/stories error:', error);
+    res.status(500).json({ error: 'Failed to fetch stories' });
+  }
+});
+
+// Create a new story
+app.post('/api/stories', uploadImage.single('media'), async (req, res) => {
+  try {
+    const { userId, caption, mediaType, duration } = req.body;
+
+    if (!userId || !req.file) {
+      return res.status(400).json({ error: 'userId and media are required' });
+    }
+
+    // Process and upload the media
+    let mediaUrl: string;
+    let thumbnailUrl: string | undefined;
+
+    if (mediaType === 'video') {
+      // For videos, we'd need video processing logic similar to reels
+      // For now, using a simplified approach
+      const filename = generateUniqueFilename('story-video.mp4');
+      mediaUrl = await uploadToR2(req.file.buffer, filename, 'video/mp4');
+      // Generate thumbnail if needed
+    } else {
+      // Image
+      const processed = await processImage(req.file.buffer);
+      const filename = generateUniqueFilename('story.jpg');
+      mediaUrl = await uploadToR2(processed, filename, 'image/jpeg');
+    }
+
+    // Stories expire after 24 hours
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const story = await Story.create({
+      userId,
+      mediaUrl,
+      mediaType: mediaType || 'image',
+      thumbnailUrl,
+      caption,
+      duration: mediaType === 'video' ? parseInt(duration) : undefined,
+      expiresAt,
+      views: [],
+      isActive: true
+    });
+
+    const populated = await Story.findById(story._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/stories error:', error);
+    res.status(500).json({ error: 'Failed to create story' });
+  }
+});
+
+// View a story (mark as viewed)
+app.post('/api/stories/:storyId/view', async (req, res) => {
+  try {
+    const { storyId } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const story = await Story.findById(storyId);
+    if (!story) {
+      return res.status(404).json({ error: 'Story not found' });
+    }
+
+    // Add user to views if not already viewed
+    if (!story.views.includes(userId as any)) {
+      story.views.push(userId as any);
+      await story.save();
+
+      // Send notification to story owner
+      if (story.userId.toString() !== userId) {
+        const viewer = await User.findById(userId).lean();
+        if (viewer) {
+          const notification = await Notification.create({
+            userId: story.userId,
+            type: 'story_view',
+            content: `${viewer.name} viewed your story`,
+            relatedUserId: userId,
+            relatedStoryId: storyId
+          });
+
+          io.to(`user_${story.userId.toString()}`).emit('new_notification', {
+            ...notification.toObject(),
+            id: notification._id.toString()
+          });
+        }
+      }
+    }
+
+    res.json({ success: true, viewCount: story.views.length });
+  } catch (error) {
+    console.error('POST /api/stories/:storyId/view error:', error);
+    res.status(500).json({ error: 'Failed to mark story as viewed' });
+  }
+});
+
+// Delete a story
+app.delete('/api/stories/:storyId', async (req, res) => {
+  try {
+    const { storyId } = req.params;
+    const { userId } = req.query;
+
+    const story = await Story.findById(storyId);
+    if (!story) {
+      return res.status(404).json({ error: 'Story not found' });
+    }
+
+    // Only owner can delete
+    if (story.userId.toString() !== userId) {
+      return res.status(403).json({ error: 'Not authorized to delete this story' });
+    }
+
+    story.isActive = false;
+    await story.save();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('DELETE /api/stories/:storyId error:', error);
+    res.status(500).json({ error: 'Failed to delete story' });
+  }
+});
+
+// Get stories for a specific user
+app.get('/api/stories/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const now = new Date();
+
+    const stories = await Story.find({
+      userId,
+      isActive: true,
+      expiresAt: { $gt: now }
+    })
+      .populate('userId', 'name username avatarUrl')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(stories);
+  } catch (error) {
+    console.error('GET /api/stories/user/:userId error:', error);
+    res.status(500).json({ error: 'Failed to fetch user stories' });
+  }
+});
+
+// ── Tag & Mention Routes ───────────────────────────────────────────────────────
+
+// Get posts where user is tagged
+app.get('/api/users/:userId/tagged', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    const posts = await Post.find({
+      taggedUsers: userId,
+      isDeleted: false
+    })
+      .populate('userId', 'name username avatarUrl isVerified')
+      .populate('taggedUsers', 'name username avatarUrl')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    const reels = await Reel.find({
+      taggedUsers: userId,
+      isDeleted: false
+    })
+      .populate('userId', 'name username avatarUrl isVerified')
+      .populate('taggedUsers', 'name username avatarUrl')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({ posts, reels });
+  } catch (error) {
+    console.error('GET /api/users/:userId/tagged error:', error);
+    res.status(500).json({ error: 'Failed to fetch tagged content' });
+  }
+});
+
+// Search users for tagging/mentioning (autocomplete)
+app.get('/api/users/search/mentions', async (req, res) => {
+  try {
+    const { query, currentUserId } = req.query;
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'query is required' });
+    }
+
+    const users = await User.find({
+      $or: [
+        { username: { $regex: query, $options: 'i' } },
+        { name: { $regex: query, $options: 'i' } }
+      ],
+      _id: { $ne: currentUserId } // Exclude current user
+    })
+      .select('name username avatarUrl isVerified')
+      .limit(10)
+      .lean();
+
+    res.json(users);
+  } catch (error) {
+    console.error('GET /api/users/search/mentions error:', error);
+    res.status(500).json({ error: 'Failed to search users' });
   }
 });
 

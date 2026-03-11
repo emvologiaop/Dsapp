@@ -23,13 +23,17 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   const [activeTab, setActiveTab] = useState<ProfileTab>('posts');
   const [posts, setPosts] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
+  const [taggedContent, setTaggedContent] = useState<any[]>([]);
   const isOwnProfile = userId === currentUserId;
 
   useEffect(() => {
     fetchProfile();
     fetchPosts();
     fetchReels();
-  }, [userId, currentUserId]);
+    if (activeTab === 'tagged') {
+      fetchTaggedContent();
+    }
+  }, [userId, currentUserId, activeTab]);
 
   const fetchProfile = async () => {
     try {
@@ -66,6 +70,18 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       }
     } catch (error) {
       console.error('Failed to fetch reels:', error);
+    }
+  };
+
+  const fetchTaggedContent = async () => {
+    try {
+      const res = await fetch(`/api/users/${userId}/tagged`);
+      if (res.ok) {
+        const data = await res.json();
+        setTaggedContent(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tagged content:', error);
     }
   };
 
@@ -167,10 +183,53 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     }
 
     if (activeTab === 'tagged') {
+      if (taggedContent.length === 0) {
+        return (
+          <div className="text-center py-20">
+            <Tag className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
+            <p className="text-muted-foreground">No tagged posts yet</p>
+          </div>
+        );
+      }
+
       return (
-        <div className="text-center py-20">
-          <Tag className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
-          <p className="text-muted-foreground">No tagged posts yet</p>
+        <div className="grid grid-cols-3 gap-1">
+          {taggedContent.map((item) => (
+            <motion.div
+              key={item._id}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                'bg-muted overflow-hidden cursor-pointer group relative',
+                item.type === 'post' ? 'aspect-square' : 'aspect-[9/16]'
+              )}
+            >
+              {item.mediaUrl || item.videoUrl ? (
+                <img
+                  src={item.mediaUrl || item.videoUrl}
+                  alt={item.type === 'post' ? 'Tagged post' : 'Tagged reel'}
+                  className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10 p-4">
+                  <p className="text-xs line-clamp-4 text-center">{item.content || item.caption}</p>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-6 text-white">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">{item.likesCount || item.likedBy?.length || 0}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold">{item.commentsCount || 0}</span>
+                </div>
+              </div>
+              {item.type === 'reel' && (
+                <div className="absolute bottom-2 left-2 text-white text-xs font-bold flex items-center gap-1">
+                  <Film className="w-4 h-4" />
+                </div>
+              )}
+            </motion.div>
+          ))}
         </div>
       );
     }

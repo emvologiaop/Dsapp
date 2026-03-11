@@ -2,10 +2,11 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface INotification extends Document {
   userId: mongoose.Types.ObjectId;
-  type: 'like' | 'follow' | 'share' | 'comment' | 'message';
+  type: 'like' | 'follow' | 'share' | 'comment' | 'message' | 'mention' | 'tag' | 'story_view';
   content: string;
   relatedUserId?: mongoose.Types.ObjectId;
   relatedPostId?: mongoose.Types.ObjectId;
+  relatedStoryId?: mongoose.Types.ObjectId;
   isRead: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -16,12 +17,13 @@ const NotificationSchema = new Schema<INotification>(
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: ['like', 'follow', 'share', 'comment', 'message'],
+      enum: ['like', 'follow', 'share', 'comment', 'message', 'mention', 'tag', 'story_view'],
       required: true,
     },
     content: { type: String, required: true },
     relatedUserId: { type: Schema.Types.ObjectId, ref: 'User' },
     relatedPostId: { type: Schema.Types.ObjectId, ref: 'Post' },
+    relatedStoryId: { type: Schema.Types.ObjectId, ref: 'Story' },
     isRead: { type: Boolean, default: false },
   },
   { timestamps: true }
