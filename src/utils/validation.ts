@@ -95,8 +95,8 @@ export function isValidUrl(url: string): boolean {
  */
 export function sanitizeFilename(filename: string): string {
   return filename
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/\.{2,}/g, '_')
+    .replace(/\.\./g, '_.')  // Replace .. with _.
+    .replace(/[^a-zA-Z0-9._-]/g, '_')  // Replace all other special chars with _
     .substring(0, 255);
 }
 
