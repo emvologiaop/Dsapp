@@ -8,6 +8,7 @@ import { simpleVideoCompress } from '../utils/videoCompression';
 import { uploadVideoToR2, UploadProgress } from '../utils/r2Upload';
 import { usePredictivePreload } from '../hooks/usePredictivePreload';
 import { VideoPlayer } from './VideoPlayer';
+import { ReelOptions } from './ReelOptions';
 
 interface VideoQuality {
   quality: string;
@@ -386,9 +387,30 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
           {/* Bottom Info & Actions */}
           <div className="flex items-end justify-between pointer-events-auto gap-4">
             <div className="flex-1 text-white space-y-2 bg-gradient-to-t from-black/60 to-transparent p-3 -m-3 rounded-t-2xl">
-              <p className="font-bold text-sm drop-shadow-lg">
-                {currentReel?.isAnonymous ? 'Ghost' : (currentReel?.userId?.name || 'User')}
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-sm drop-shadow-lg">
+                  {currentReel?.isAnonymous ? 'Ghost' : (currentReel?.userId?.name || 'User')}
+                </p>
+                {!currentReel?.isAnonymous && (
+                  <ReelOptions
+                    reelId={currentReel._id}
+                    userId={user?.id}
+                    reelOwnerId={currentReel?.userId?._id}
+                    initialCaption={currentReel.caption}
+                    onDelete={() => {
+                      setReels(reels.filter((r) => r._id !== currentReel._id));
+                      if (currentIndex >= reels.length - 1 && currentIndex > 0) {
+                        setCurrentIndex(currentIndex - 1);
+                      }
+                    }}
+                    onEdit={(caption) => {
+                      setReels(reels.map((r) =>
+                        r._id === currentReel._id ? { ...r, caption } : r
+                      ));
+                    }}
+                  />
+                )}
+              </div>
               {currentReel?.caption && (
                 <p className="text-xs text-white/90 drop-shadow-lg line-clamp-2">{currentReel.caption}</p>
               )}
