@@ -242,15 +242,22 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
         <div className="flex items-start gap-6 mb-6">
           {/* Avatar with DDU ring */}
           <div className="relative">
-            <div className={`w-20 h-20 md:w-28 md:h-28 rounded-full border-[3px] bg-muted flex items-center justify-center text-4xl font-bold overflow-hidden shrink-0 shadow-lg ${
-              profile.badgeType === 'gold' ? 'border-yellow-400' : profile.badgeType === 'blue' || profile.isVerified ? 'border-blue-500' : 'border-primary/30'
-            }`}>
-              {profile.avatarUrl ? (
-                <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-primary">{profile.name?.[0] || 'U'}</span>
-              )}
-            </div>
+            {(() => {
+              const badgeType = profile.badgeType;
+              const borderClass = badgeType === 'gold'
+                ? 'border-yellow-400'
+                : (badgeType === 'blue' || profile.isVerified) ? 'border-blue-500'
+                : 'border-primary/30';
+              return (
+                <div className={`w-20 h-20 md:w-28 md:h-28 rounded-full border-[3px] bg-muted flex items-center justify-center text-4xl font-bold overflow-hidden shrink-0 shadow-lg ${borderClass}`}>
+                  {profile.avatarUrl ? (
+                    <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-primary">{profile.name?.[0] || 'U'}</span>
+                  )}
+                </div>
+              );
+            })()}
             {(profile.isVerified || profile.badgeType === 'blue' || profile.badgeType === 'gold') && (
               <div className={`absolute -bottom-1 -right-1 rounded-full p-1 border-2 border-background shadow-md ${
                 profile.badgeType === 'gold' ? 'bg-yellow-400' : 'bg-blue-500'

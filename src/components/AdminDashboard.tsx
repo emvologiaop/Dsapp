@@ -972,7 +972,20 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 {selectedVerifUser.verificationPhotoUrl && (
                   <div>
                     <p className="text-sm font-semibold mb-1">Submitted Photo:</p>
-                    <img src={selectedVerifUser.verificationPhotoUrl} alt="Verification photo" className="w-full max-h-48 object-cover rounded-lg border border-border" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    <img
+                      src={selectedVerifUser.verificationPhotoUrl}
+                      alt="Verification photo"
+                      className="w-full max-h-48 object-cover rounded-lg border border-border"
+                      onError={e => {
+                        const img = e.target as HTMLImageElement;
+                        img.style.display = 'none';
+                        const fallback = img.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                    <div style={{ display: 'none' }} className="w-full h-20 rounded-lg border border-border bg-muted items-center justify-center text-sm text-muted-foreground">
+                      ⚠️ Photo could not be loaded — please open the link below
+                    </div>
                     <a href={selectedVerifUser.verificationPhotoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline mt-1 block">Open in new tab</a>
                   </div>
                 )}
