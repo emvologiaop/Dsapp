@@ -26,6 +26,7 @@ import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
+import { extractHashtags, normalizeHashtagQuery } from './src/utils/socialText.js';
 
 dotenv.config();
 
@@ -1582,20 +1583,6 @@ function extractMentions(text: string): string[] {
     mentions.push(match[1].toLowerCase());
   }
   return [...new Set(mentions)]; // Remove duplicates
-}
-
-function extractHashtags(text: string): string[] {
-  const hashtagRegex = /#(\w+)/g;
-  const hashtags: string[] = [];
-  let match;
-  while ((match = hashtagRegex.exec(text)) !== null) {
-    hashtags.push(match[1].toLowerCase());
-  }
-  return [...new Set(hashtags)];
-}
-
-function normalizeHashtagQuery(query: string): string {
-  return query.trim().replace(/^#+/, '').toLowerCase();
 }
 
 // Send mention notifications

@@ -21,7 +21,7 @@ export const HashtagText: React.FC<HashtagTextProps> = ({
       {parts.map((part, index) => (
         part.startsWith('#') && onHashtagClick ? (
           <button
-            key={`${part}-${index}`}
+            key={index}
             type="button"
             onClick={() => onHashtagClick?.(part)}
             className={hashtagClassName || 'text-primary hover:underline'}
@@ -29,11 +29,11 @@ export const HashtagText: React.FC<HashtagTextProps> = ({
             {part}
           </button>
         ) : part.startsWith('#') ? (
-          <span key={`${part}-${index}`} className={hashtagClassName || 'text-primary'}>
+          <span key={index} className={hashtagClassName || 'text-primary'}>
             {part}
           </span>
         ) : (
-          <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+          <React.Fragment key={index}>{part}</React.Fragment>
         )
       ))}
     </p>
