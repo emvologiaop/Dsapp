@@ -333,13 +333,30 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user }) => {
           />
         </div>
 
-        <video
-          ref={videoRef}
-          src={currentReel?.videoUrl}
-          loop
+        <VideoPlayer
+          videoQualities={currentReel?.videoQualities}
+          videoUrl={currentReel?.videoUrl}
+          thumbnailUrl={currentReel?.thumbnailUrl}
+          autoPlay={isPlaying}
           muted={isMuted}
-          playsInline
-          className="w-full h-full object-cover"
+          loop={true}
+          onEnded={() => {
+            // Auto advance to next reel
+            if (currentIndex < reels.length - 1) {
+              setCurrentIndex(currentIndex + 1);
+            }
+          }}
+          onTimeUpdate={(time) => {
+            if (videoRef.current) {
+              const progress = (time / videoRef.current.duration) * 100;
+              setPlaybackProgress(progress || 0);
+            }
+          }}
+          preloadNext={() => {
+            // Predictive preload triggered at 80% playback
+            console.log('Preloading next videos...');
+          }}
+          className="w-full h-full"
         />
 
         {/* Unique gradient overlays */}
