@@ -84,7 +84,8 @@ app.use('/api', async (req, res, next) => {
   }
 });
 
-initBot(io);
+const bot = initBot(io);
+const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 async function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -868,6 +869,22 @@ app.post('/api/notifications/:id/read', async (req, res) => {
 // ── Telegram Webhook ───────────────────────────────────────────────────────────
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
+    if (!bot) {
+      return res.status(503).json({ error: 'Telegram bot not initialized' });
+    }
+
+    if (TELEGRAM_WEBHOOK_SECRET) {
+      const headerSecret = req.headers['x-telegram-bot-api-secret-token'];
+      const secretMatches = Array.isArray(headerSecret)
+        ? headerSecret.includes(TELEGRAM_WEBHOOK_SECRET)
+        : headerSecret === TELEGRAM_WEBHOOK_SECRET;
+
+      if (!secretMatches) {
+        return res.status(401).json({ error: 'Invalid webhook secret' });
+      }
+    }
+
+    bot.processUpdate(req.body);
     res.json({ ok: true });
   } catch (error) {
     console.error('POST /api/telegram/webhook error:', error);
