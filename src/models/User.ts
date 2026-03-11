@@ -17,6 +17,11 @@ export interface IUser extends Document {
   telegramAuthCode?: string;
   followingIds: mongoose.Types.ObjectId[];
   followerIds: mongoose.Types.ObjectId[];
+  role: 'user' | 'admin';
+  isBanned: boolean;
+  bannedAt?: Date;
+  bannedBy?: mongoose.Types.ObjectId;
+  banReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -40,6 +45,11 @@ const UserSchema = new Schema<IUser>(
     telegramAuthCode: { type: String },
     followingIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     followerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    isBanned: { type: Boolean, default: false },
+    bannedAt: { type: Date },
+    bannedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    banReason: { type: String },
   },
   { timestamps: true }
 );

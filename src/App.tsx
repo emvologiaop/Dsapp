@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -16,6 +16,11 @@ import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
 import { FeatureIdeas } from './components/FeatureIdeas';
+import { AdminDashboard } from './components/AdminDashboard';
+import { InstagramProfile } from './components/InstagramProfile';
+import { EditProfileModal } from './components/EditProfileModal';
+import { PostOptions } from './components/PostOptions';
+import { SearchPanel } from './components/SearchPanel';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -29,6 +34,8 @@ export default function App() {
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [chats, setChats] = useState<any[]>([]);
   const [showEditProfile, setShowEditProfile] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -116,12 +123,16 @@ export default function App() {
 
   if (activeChat) {
     return (
-      <ChatRoom 
-        currentUser={user} 
-        otherUser={activeChat} 
-        onBack={() => setActiveChat(null)} 
+      <ChatRoom
+        currentUser={user}
+        otherUser={activeChat}
+        onBack={() => setActiveChat(null)}
       />
     );
+  }
+
+  if (showAdminDashboard) {
+    return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
 
   return (
@@ -138,6 +149,13 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowSearch(true)}
+            className="p-2 rounded-full bg-muted text-muted-foreground hover:bg-muted/80 transition-all"
+            aria-label="Search"
+          >
+            <Search size={20} />
+          </button>
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
           <button
@@ -203,13 +221,32 @@ export default function App() {
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  {!post.isAnonymous && user && (
-                    <FollowButton
-                      userId={user.id}
-                      targetId={post.userId._id}
-                      initialIsFollowing={post.isFollowing}
-                    />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!post.isAnonymous && user && post.userId?._id !== user.id && (
+                      <FollowButton
+                        userId={user.id}
+                        targetId={post.userId._id}
+                        initialIsFollowing={post.isFollowing}
+                      />
+                    )}
+                    {!post.isAnonymous && (
+                      <PostOptions
+                        postId={post._id}
+                        userId={user?.id}
+                        postOwnerId={post.userId?._id}
+                        initialContent={post.content}
+                        initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
+                        onDelete={() => {
+                          setPosts(posts.filter(p => p._id !== post._id));
+                        }}
+                        onEdit={(content, mediaUrls) => {
+                          setPosts(posts.map(p =>
+                            p._id === post._id ? { ...p, content, mediaUrls } : p
+                          ));
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
@@ -298,7 +335,25 @@ export default function App() {
         {activeTab === 'settings' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold">Settings</h2>
-            
+
+            {user?.role === 'admin' && (
+              <div className="space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Admin</h3>
+                <FriendlyCard
+                  onClick={() => setShowAdminDashboard(true)}
+                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
+                >
+                  <div className="p-3 bg-primary/20 rounded-lg">
+                    <Shield size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-bold">Admin Dashboard</p>
+                    <p className="text-xs text-muted-foreground">Manage users, posts, and reels</p>
+                  </div>
+                </FriendlyCard>
+              </div>
+            )}
+
             <div className="space-y-4">
               <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Profile</h3>
               <FriendlyCard className="flex items-center gap-4">
@@ -418,6 +473,10 @@ export default function App() {
           onClose={() => setShowEditProfile(false)}
           onSave={handleProfileUpdate}
         />
+      )}
+
+      {showSearch && (
+        <SearchPanel onClose={() => setShowSearch(false)} />
       )}
 
         {/* Bottom Nav */}

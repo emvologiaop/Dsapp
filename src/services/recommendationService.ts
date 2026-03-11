@@ -143,6 +143,7 @@ export async function getPersonalizedReels(
     {
       $match: {
         _id: { $nin: history.viewedReelIds.map(id => new mongoose.Types.ObjectId(id)) },
+        isDeleted: { $ne: true }, // Filter out deleted reels
       },
     },
     {
@@ -287,6 +288,7 @@ export async function getTrendingReels(limit: number = 30, offset: number = 0): 
     {
       $match: {
         createdAt: { $gte: oneDayAgo }, // Only recent content
+        isDeleted: { $ne: true }, // Filter out deleted reels
       },
     },
     {

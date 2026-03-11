@@ -21,6 +21,7 @@ import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware
 import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
+import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
 
 dotenv.config();
 
@@ -324,7 +325,7 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
 app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    const posts = await Post.find()
+    const posts = await Post.find({ isDeleted: { $ne: true } })
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('userId', 'name username avatarUrl')
@@ -512,6 +513,48 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
   } catch (error) {
     console.error('POST /api/posts/:postId/comments error:', error);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// User delete own post
+app.delete('/api/posts/:postId', authenticate, requirePostOwnership, async (req, res) => {
+  try {
+    req.post.isDeleted = true;
+    req.post.deletedAt = new Date();
+    req.post.deletedBy = req.user._id;
+    await req.post.save();
+
+    res.json({ success: true, message: 'Post deleted successfully' });
+  } catch (error) {
+    console.error('DELETE /api/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+});
+
+// User edit own post
+app.put('/api/posts/:postId', authenticate, requirePostOwnership, async (req, res) => {
+  try {
+    const { content, mediaUrls } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    req.post.content = content;
+    if (mediaUrls !== undefined) {
+      req.post.mediaUrls = mediaUrls;
+    }
+    req.post.updatedAt = new Date();
+    await req.post.save();
+
+    const populated = await Post.findById(req.post._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.json(populated);
+  } catch (error) {
+    console.error('PUT /api/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to update post' });
   }
 });
 
@@ -1119,6 +1162,359 @@ app.post('/api/reels/:reelId/share', async (req, res) => {
   }
 });
 
+// User delete own reel
+app.delete('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
+  try {
+    req.reel.isDeleted = true;
+    req.reel.deletedAt = new Date();
+    req.reel.deletedBy = req.user._id;
+    await req.reel.save();
+
+    res.json({ success: true, message: 'Reel deleted successfully' });
+  } catch (error) {
+    console.error('DELETE /api/reels/:reelId error:', error);
+    res.status(500).json({ error: 'Failed to delete reel' });
+  }
+});
+
+// User edit own reel
+app.put('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
+  try {
+    const { caption } = req.body;
+
+    req.reel.caption = caption || '';
+    req.reel.updatedAt = new Date();
+    await req.reel.save();
+
+    const populated = await Reel.findById(req.reel._id)
+      .populate('userId', 'name username avatarUrl')
+      .lean();
+
+    res.json(populated);
+  } catch (error) {
+    console.error('PUT /api/reels/:reelId error:', error);
+    res.status(500).json({ error: 'Failed to update reel' });
+  }
+});
+
+// ── Search Routes ──────────────────────────────────────────────────────────────
+
+// Global search endpoint
+app.get('/api/search', async (req, res) => {
+  try {
+    const { query, type = 'all', limit = 10 } = req.query;
+
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const searchRegex = { $regex: query, $options: 'i' };
+    const limitNum = Math.min(parseInt(limit as string) || 10, 50);
+
+    const results: any = {
+      users: [],
+      posts: [],
+      reels: [],
+    };
+
+    // Search users
+    if (type === 'all' || type === 'users') {
+      results.users = await User.find({
+        $or: [
+          { name: searchRegex },
+          { username: searchRegex },
+        ],
+      })
+        .select('name username avatarUrl bio')
+        .limit(limitNum)
+        .lean();
+    }
+
+    // Search posts
+    if (type === 'all' || type === 'posts') {
+      results.posts = await Post.find({
+        content: searchRegex,
+        isDeleted: { $ne: true },
+      })
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean();
+    }
+
+    // Search reels
+    if (type === 'all' || type === 'reels') {
+      results.reels = await Reel.find({
+        caption: searchRegex,
+        isDeleted: { $ne: true },
+      })
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .limit(limitNum)
+        .lean();
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('GET /api/search error:', error);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// ── Admin Routes ───────────────────────────────────────────────────────────────
+
+// Get all users (admin only)
+app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const search = req.query.search as string || '';
+    const skip = (page - 1) * limit;
+
+    const searchQuery = search ? {
+      $or: [
+        { name: { $regex: search, $options: 'i' } },
+        { username: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ]
+    } : {};
+
+    const [users, total] = await Promise.all([
+      User.find(searchQuery)
+        .select('-password -telegramAuthCode')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments(searchQuery)
+    ]);
+
+    res.json({
+      users,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('GET /api/admin/users error:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Ban user (admin only)
+app.post('/api/admin/users/:userId/ban', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(400).json({ error: 'Ban reason is required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(403).json({ error: 'Cannot ban admin users' });
+    }
+
+    user.isBanned = true;
+    user.bannedAt = new Date();
+    user.bannedBy = req.user._id;
+    user.banReason = reason;
+    await user.save();
+
+    res.json({ success: true, user: { id: user._id, isBanned: user.isBanned } });
+  } catch (error) {
+    console.error('POST /api/admin/users/:userId/ban error:', error);
+    res.status(500).json({ error: 'Failed to ban user' });
+  }
+});
+
+// Unban user (admin only)
+app.post('/api/admin/users/:userId/unban', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    user.isBanned = false;
+    user.bannedAt = undefined;
+    user.bannedBy = undefined;
+    user.banReason = undefined;
+    await user.save();
+
+    res.json({ success: true, user: { id: user._id, isBanned: user.isBanned } });
+  } catch (error) {
+    console.error('POST /api/admin/users/:userId/unban error:', error);
+    res.status(500).json({ error: 'Failed to unban user' });
+  }
+});
+
+// Delete post (admin only)
+app.delete('/api/admin/posts/:postId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { postId } = req.params;
+
+    const post = await Post.findById(postId);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    post.isDeleted = true;
+    post.deletedAt = new Date();
+    post.deletedBy = req.user._id;
+    await post.save();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('DELETE /api/admin/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+});
+
+// Delete reel (admin only)
+app.delete('/api/admin/reels/:reelId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { reelId } = req.params;
+
+    const reel = await Reel.findById(reelId);
+    if (!reel) {
+      return res.status(404).json({ error: 'Reel not found' });
+    }
+
+    reel.isDeleted = true;
+    reel.deletedAt = new Date();
+    reel.deletedBy = req.user._id;
+    await reel.save();
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('DELETE /api/admin/reels/:reelId error:', error);
+    res.status(500).json({ error: 'Failed to delete reel' });
+  }
+});
+
+// Get admin statistics
+app.get('/api/admin/stats', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      bannedUsers,
+      totalPosts,
+      deletedPosts,
+      totalReels,
+      deletedReels,
+      recentUsers,
+      recentPosts
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ isBanned: true }),
+      Post.countDocuments(),
+      Post.countDocuments({ isDeleted: true }),
+      Reel.countDocuments(),
+      Reel.countDocuments({ isDeleted: true }),
+      User.find().select('name username createdAt').sort({ createdAt: -1 }).limit(5),
+      Post.find({ isDeleted: false }).populate('userId', 'name username').sort({ createdAt: -1 }).limit(5)
+    ]);
+
+    res.json({
+      stats: {
+        users: {
+          total: totalUsers,
+          banned: bannedUsers,
+          active: totalUsers - bannedUsers
+        },
+        posts: {
+          total: totalPosts,
+          deleted: deletedPosts,
+          active: totalPosts - deletedPosts
+        },
+        reels: {
+          total: totalReels,
+          deleted: deletedReels,
+          active: totalReels - deletedReels
+        }
+      },
+      recent: {
+        users: recentUsers,
+        posts: recentPosts
+      }
+    });
+  } catch (error) {
+    console.error('GET /api/admin/stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch statistics' });
+  }
+});
+
+// Get all posts (admin only)
+app.get('/api/admin/posts', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    const [posts, total] = await Promise.all([
+      Post.find()
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Post.countDocuments()
+    ]);
+
+    res.json({
+      posts,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('GET /api/admin/posts error:', error);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+// Get all reels (admin only)
+app.get('/api/admin/reels', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const skip = (page - 1) * limit;
+
+    const [reels, total] = await Promise.all([
+      Reel.find()
+        .populate('userId', 'name username avatarUrl')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Reel.countDocuments()
+    ]);
+
+    res.json({
+      reels,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('GET /api/admin/reels error:', error);
+    res.status(500).json({ error: 'Failed to fetch reels' });
+  }
+});
 
 // Serve React app for all other routes (SPA fallback)
 app.get('*', (_req, res) => {

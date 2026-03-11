@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
 import { FollowButton } from './FollowButton';
-import { Settings, Grid3x3, Film, UserTag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, Sparkles } from 'lucide-react';
+import { Settings, Grid3x3, Film, Tag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, Sparkles } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -169,7 +169,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     if (activeTab === 'tagged') {
       return (
         <div className="text-center py-20">
-          <UserTag className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
+          <Tag className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
           <p className="text-muted-foreground">No tagged posts yet</p>
         </div>
       );
@@ -341,7 +341,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            <UserTag className="w-4 h-4" />
+            <Tag className="w-4 h-4" />
             <span className="hidden md:inline">Tagged</span>
           </button>
         </div>
