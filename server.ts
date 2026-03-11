@@ -16,6 +16,11 @@ import { Notification } from './src/models/Notification.js';
 import { Share } from './src/models/Share.js';
 import { Comment } from './src/models/Comment.js';
 import { Reel } from './src/models/Reel.js';
+import { VideoView } from './src/models/VideoView.js';
+import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
+import { processVideo, processImage } from './src/services/videoProcessor.js';
+import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
+import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 
 dotenv.config();
 
@@ -802,17 +807,35 @@ app.post('/api/telegram/webhook', async (req, res) => {
 
 app.get('/api/reels', async (req, res) => {
   try {
-    const { userId } = req.query;
-    const reels = await Reel.find()
-      .sort({ createdAt: -1 })
-      .limit(30)
-      .populate('userId', 'name username avatarUrl')
-      .lean();
+    const { userId, page = '0', trending = 'false' } = req.query;
+    const offset = parseInt(page as string) * 30;
 
+    let reels;
+
+    if (trending === 'true' || !userId) {
+      // Show trending content for new users or when explicitly requested
+      reels = await getTrendingReels(30, offset);
+    } else {
+      // Show personalized recommendations
+      try {
+        reels = await getPersonalizedReels(userId as string, 30, offset);
+
+        // Fallback to trending if personalization fails or returns empty
+        if (reels.length === 0) {
+          reels = await getTrendingReels(30, offset);
+        }
+      } catch (error) {
+        console.error('Personalization error, falling back to trending:', error);
+        reels = await getTrendingReels(30, offset);
+      }
+    }
+
+    // Enrich with user-specific data
     const enriched = reels.map((reel: any) => ({
       ...reel,
-      likesCount: reel.likedBy.length,
-      isLiked: userId ? reel.likedBy.some((id: any) => id.toString() === userId.toString()) : false,
+      userId: reel.user ? { _id: reel.user._id, name: reel.user.name, username: reel.user.username, avatarUrl: reel.user.avatarUrl } : null,
+      likesCount: reel.likedBy?.length || 0,
+      isLiked: userId ? reel.likedBy?.some((id: any) => id.toString() === userId.toString()) : false,
     }));
 
     res.json(enriched);
@@ -912,6 +935,142 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
   } catch (error) {
     console.error('POST /api/reels/:reelId/comments error:', error);
     res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ── R2 Storage Endpoints ──────────────────────────────────────────────────────
+
+// Upload video to R2 with processing (transcoding, thumbnail)
+app.post('/api/reels/upload-r2', uploadVideo.single('video'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No video file provided' });
+    }
+
+    const { userId, caption, isAnonymous } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    // Process video (transcode, generate thumbnail, upload to R2)
+    const processedVideo = await processVideo(req.file.buffer, req.file.originalname);
+
+    // Create reel with R2 URLs
+    const reel = await Reel.create({
+      userId,
+      videoUrl: processedVideo.qualities[0]?.url || processedVideo.originalUrl, // Default to first quality
+      videoQualities: processedVideo.qualities,
+      thumbnailUrl: processedVideo.thumbnail,
+      duration: processedVideo.duration,
+      originalUrl: processedVideo.originalUrl,
+      caption: caption || '',
+      isAnonymous: Boolean(isAnonymous),
+    });
+
+    const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
+    res.status(201).json(populated);
+  } catch (error) {
+    console.error('POST /api/reels/upload-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload video to R2' });
+  }
+});
+
+// Upload image to R2
+app.post('/api/images/upload-r2', uploadImage.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const imageUrl = await processImage(req.file.buffer, req.file.originalname);
+    res.status(200).json({ url: imageUrl });
+  } catch (error) {
+    console.error('POST /api/images/upload-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload image to R2' });
+  }
+});
+
+// Upload multiple images to R2
+app.post('/api/images/upload-multiple-r2', uploadMultipleImages.array('images', 10), async (req, res) => {
+  try {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      return res.status(400).json({ error: 'No image files provided' });
+    }
+
+    const uploadPromises = req.files.map(file =>
+      processImage(file.buffer, file.originalname)
+    );
+
+    const imageUrls = await Promise.all(uploadPromises);
+    res.status(200).json({ urls: imageUrls });
+  } catch (error) {
+    console.error('POST /api/images/upload-multiple-r2 error:', error);
+    res.status(500).json({ error: 'Failed to upload images to R2' });
+  }
+});
+
+// Stream video chunk from R2 (for chunked streaming)
+app.get('/api/stream/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const range = req.headers.range;
+
+    // In a real implementation, you would:
+    // 1. Get video metadata from DB
+    // 2. Fetch the appropriate quality version
+    // 3. Stream the video with range support
+
+    // For now, return a simple response
+    res.status(501).json({
+      error: 'Streaming endpoint not yet implemented',
+      message: 'Videos should be accessed directly from R2 public URL with CDN'
+    });
+  } catch (error) {
+    console.error('GET /api/stream/:videoId error:', error);
+    res.status(500).json({ error: 'Failed to stream video' });
+  }
+});
+
+// Record video view
+app.post('/api/reels/:reelId/view', async (req, res) => {
+  try {
+    const { reelId } = req.params;
+    const { userId, watchDuration, totalDuration } = req.body;
+
+    if (!userId || watchDuration === undefined || totalDuration === undefined) {
+      return res.status(400).json({ error: 'userId, watchDuration, and totalDuration are required' });
+    }
+
+    const watchPercentage = (watchDuration / totalDuration) * 100;
+    const completed = watchPercentage >= 80;
+
+    // Check if view already exists (update if so)
+    const existingView = await VideoView.findOne({ reelId, userId });
+
+    if (existingView) {
+      // Update if this is a longer watch duration
+      if (watchDuration > existingView.watchDuration) {
+        existingView.watchDuration = watchDuration;
+        existingView.watchPercentage = watchPercentage;
+        existingView.completed = completed;
+        await existingView.save();
+      }
+    } else {
+      // Create new view record
+      await VideoView.create({
+        reelId,
+        userId,
+        watchDuration,
+        totalDuration,
+        watchPercentage,
+        completed,
+      });
+    }
+
+    res.json({ success: true, completed });
+  } catch (error) {
+    console.error('POST /api/reels/:reelId/view error:', error);
+    res.status(500).json({ error: 'Failed to record view' });
   }
 });
 

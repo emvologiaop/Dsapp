@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Image as ImageIcon, Ghost, X } from 'lucide-react';
+import { Send, Image as ImageIcon, Ghost, X, Loader2 } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
 import { cn } from '../lib/utils';
+import { uploadMultipleImagesToR2, compressImage, UploadProgress } from '../utils/r2Upload';
 
 interface CreatePostProps {
   user: any;
@@ -15,6 +16,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   const [isPosting, setIsPosting] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -41,7 +44,34 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   const handlePost = async () => {
     if (!content.trim()) return;
     setIsPosting(true);
+    setUploadProgress(0);
+
     try {
+      let mediaUrls = imagePreviews;
+
+      // If R2 upload is enabled and there are images to upload
+      if (useR2Upload && selectedImages.length > 0) {
+        setUploadProgress(10);
+
+        // Compress images before upload
+        const compressedImages = await Promise.all(
+          selectedImages.map(file => compressImage(file, 1920, 1920, 0.85))
+        );
+
+        setUploadProgress(30);
+
+        // Upload to R2
+        mediaUrls = await uploadMultipleImagesToR2(
+          compressedImages,
+          (progress: UploadProgress) => {
+            setUploadProgress(30 + (progress.percentage * 0.6)); // 30-90%
+          }
+        );
+
+        setUploadProgress(90);
+      }
+
+      // Create post with R2 URLs or base64 previews
       const response = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -49,19 +79,25 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
           userId: user.id,
           content,
           isAnonymous,
-          mediaUrls: imagePreviews
+          mediaUrls
         })
       });
+
       if (response.ok) {
         setContent('');
         setSelectedImages([]);
         setImagePreviews([]);
+        setUploadProgress(100);
         onPostCreated();
+      } else {
+        throw new Error('Post failed');
       }
     } catch (error) {
       console.error("Post error:", error);
+      alert('Failed to create post. Please try again.');
     } finally {
       setIsPosting(false);
+      setUploadProgress(0);
     }
   };
 
@@ -115,9 +151,10 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         <button
           onClick={handlePost}
           disabled={isPosting || !content.trim()}
-          className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50"
+          className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
         >
-          {isPosting ? "Posting..." : "Post"}
+          {isPosting && <Loader2 size={16} className="animate-spin" />}
+          {isPosting ? (uploadProgress > 0 ? `${uploadProgress}%` : "Posting...") : "Post"}
         </button>
       </div>
     </FriendlyCard>
