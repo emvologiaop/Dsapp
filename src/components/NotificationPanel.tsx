@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Bell } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
+import socket from '../services/socket';
 
 interface Notification {
   id: string;
@@ -20,6 +21,8 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
+    if (!userId) return;
+
     const fetchNotifications = async () => {
       const response = await fetch(`/api/notifications/${userId}`);
       if (response.ok) {
@@ -28,6 +31,16 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
       }
     };
     fetchNotifications();
+
+    const handleNewNotification = (notification: Notification) => {
+      setNotifications(prev => [notification, ...prev]);
+    };
+
+    socket.on('new_notification', handleNewNotification);
+
+    return () => {
+      socket.off('new_notification', handleNewNotification);
+    };
   }, [userId]);
 
   const markAsRead = async (id: string) => {
