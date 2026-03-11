@@ -156,7 +156,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                   <option value="" className="bg-background">Select Gender</option>
                   <option value="male" className="bg-background">Male</option>
                   <option value="female" className="bg-background">Female</option>
-                  <option value="other" className="bg-background">Other</option>
                 </select>
               </div>
               {errors.gender && <p className="text-red-400 text-xs ml-1">{errors.gender}</p>}
