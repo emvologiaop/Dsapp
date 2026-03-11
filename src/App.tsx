@@ -21,6 +21,7 @@ import { InstagramProfile } from './components/InstagramProfile';
 import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -37,6 +38,8 @@ export default function App() {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -72,6 +75,17 @@ export default function App() {
         localStorage.removeItem('ddu_user');
       }
     }
+
+    // Check maintenance mode
+    fetch('/api/system/maintenance')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setMaintenanceMode(data.maintenanceMode);
+          setMaintenanceMessage(data.maintenanceMessage || '');
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -145,6 +159,11 @@ export default function App() {
 
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
+  }
+
+  // Show maintenance screen for non-admin users when maintenance mode is active
+  if (maintenanceMode && user?.role !== 'admin') {
+    return <MaintenanceScreen message={maintenanceMessage} />;
   }
 
   if (activeChat) {
