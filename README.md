@@ -65,6 +65,24 @@ See [ADMIN_PANEL.md](ADMIN_PANEL.md) for admin panel documentation.
 3. Run the app:
    `npm run dev`
 
+## Development Guidelines
+
+### For Contributors: Avoiding Merge Conflicts
+
+If you're experiencing merge conflicts or want to prevent them:
+
+- **Quick Start**: See [QUICK_START.md](QUICK_START.md) for immediate resolution steps
+- **Detailed Guide**: See [MERGE_CONFLICT_RESOLUTION_GUIDE.md](MERGE_CONFLICT_RESOLUTION_GUIDE.md) for strategies
+- **Best Practices**: See [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md) for coding guidelines
+- **PR Priority**: See [.github/PR_PRIORITY.md](.github/PR_PRIORITY.md) for merge coordination
+- **Git Setup**: Run `./setup-git-config.sh` to configure helpful Git aliases
+
+**Key Points**:
+- Keep PRs small (1-3 files, <200 lines)
+- Check open PRs before modifying `server.ts` or `src/App.tsx`
+- Merge in priority order: Infrastructure → Features → Enhancements
+- Update your branch regularly with `git sync`
+
 ## Roadmap and ideas
 
 Open **Settings → Roadmap** in the app to see a curated list of feature ideas and enhancements (with impact, status, and upvotes). Use the form there to quickly propose new improvements without leaving the product.
