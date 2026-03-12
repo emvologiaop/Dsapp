@@ -358,8 +358,14 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
 app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    const posts = await Post.find({ isDeleted: { $ne: true } })
-      .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers')
+    const posts = await Post.find({
+      isDeleted: { $ne: true },
+      $or: [
+        { approvalStatus: { $exists: false } },
+        { approvalStatus: 'approved' },
+      ],
+    })
+      .select('userId title content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers contentType groupId place eventTime approvalStatus')
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('userId', 'name username avatarUrl')
@@ -390,31 +396,64 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers, contentType, groupId, title, place, eventTime } = req.body;
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
+
+    const author = await User.findById(userId).select('role').lean();
+    if (!author) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const normalizedContentType =
+      contentType === 'group' || contentType === 'event' || contentType === 'academic' || contentType === 'announcement'
+        ? contentType
+        : 'feed';
+
+    if (normalizedContentType === 'group' && !groupId) {
+      return res.status(400).json({ error: 'groupId is required for group posts' });
+    }
+
+    if (normalizedContentType === 'event') {
+      const photoCount = Array.isArray(mediaUrls) ? mediaUrls.length : mediaUrl ? 1 : 0;
+      if (!title || !place || !eventTime || !photoCount) {
+        return res.status(400).json({ error: 'Events require title, description, photo, time, and place' });
+      }
+    }
+
+    if ((normalizedContentType === 'academic' || normalizedContentType === 'announcement') && author.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can publish this content type' });
+    }
+
+    const approvalStatus = normalizedContentType === 'event' && author.role !== 'admin' ? 'pending' : 'approved';
 
     // Extract mentions from content
     const mentions = extractMentions(content);
 
     const post = await Post.create({
       userId,
+      title,
       content,
-      isAnonymous: Boolean(isAnonymous),
+      isAnonymous: normalizedContentType === 'feed' ? Boolean(isAnonymous) : false,
       mediaUrl,
       mediaUrls: mediaUrls || [],
+      contentType: normalizedContentType,
+      groupId,
+      place,
+      eventTime: eventTime ? new Date(eventTime) : undefined,
+      approvalStatus,
       taggedUsers: taggedUsers || [],
       mentions
     });
 
     // Send mention notifications
-    if (mentions.length > 0 && !isAnonymous) {
+    if (approvalStatus === 'approved' && mentions.length > 0 && !post.isAnonymous) {
       await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
     }
 
     // Send tag notifications to tagged users
-    if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
+    if (approvalStatus === 'approved' && taggedUsers && taggedUsers.length > 0 && !post.isAnonymous) {
       const tagger = await User.findById(userId).lean();
       if (tagger) {
         const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
@@ -2095,6 +2134,32 @@ app.get('/api/admin/posts', authenticate, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('GET /api/admin/posts error:', error);
     res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+app.post('/api/admin/posts/:postId/approval', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { approvalStatus } = req.body;
+
+    if (approvalStatus !== 'approved' && approvalStatus !== 'rejected') {
+      return res.status(400).json({ error: 'approvalStatus must be approved or rejected' });
+    }
+
+    const post = await Post.findByIdAndUpdate(
+      postId,
+      { approvalStatus },
+      { new: true }
+    ).populate('userId', 'name username avatarUrl');
+
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    res.json(post);
+  } catch (error) {
+    console.error('POST /api/admin/posts/:postId/approval error:', error);
+    res.status(500).json({ error: 'Failed to update approval status' });
   }
 });
 

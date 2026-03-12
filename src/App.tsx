@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Users, CalendarDays, GraduationCap, Megaphone, MapPin, Clock3, Sparkles } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -22,6 +22,7 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { COMMUNITY_GROUPS, CommunitySection, getGroupName, getVisibleCommunityPosts, normalizeContentType } from './utils/community';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -40,6 +41,10 @@ export default function App() {
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [homeSection, setHomeSection] = useState<CommunitySection>('feed');
+  const [selectedGroupId, setSelectedGroupId] = useState('all');
+  const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -96,6 +101,30 @@ export default function App() {
       fetchChats();
     }
   }, [isOnboarded, activeTab]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    const savedGroups = localStorage.getItem(`ddu_joined_groups_${user.id}`);
+    if (savedGroups) {
+      try {
+        setJoinedGroups(JSON.parse(savedGroups));
+        return;
+      } catch (error) {
+        console.error('Failed to read joined groups:', error);
+      }
+    }
+
+    setJoinedGroups([COMMUNITY_GROUPS[0].id]);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) {
+      localStorage.setItem(`ddu_joined_groups_${user.id}`, JSON.stringify(joinedGroups));
+    }
+  }, [joinedGroups, user?.id]);
 
   const fetchChats = async () => {
     try {
@@ -156,6 +185,24 @@ export default function App() {
       console.error('Failed to toggle Telegram notifications:', error);
     }
   };
+
+  const toggleGroupMembership = (groupId: string) => {
+    setJoinedGroups((current) => {
+      if (current.includes(groupId)) {
+        const nextGroups = current.filter((id) => id !== groupId);
+        if (selectedGroupId === groupId) {
+          setSelectedGroupId('all');
+        }
+        return nextGroups;
+      }
+
+      setSelectedGroupId(groupId);
+      setHomeSection('groups');
+      return [...current, groupId];
+    });
+  };
+
+  const visiblePosts = getVisibleCommunityPosts(posts, homeSection, selectedGroupId);
 
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
@@ -233,28 +280,188 @@ export default function App() {
       <main className="px-6 py-6 max-w-2xl mx-auto">
         {activeTab === 'home' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Feed</h2>
-              <button 
-                onClick={() => setShowCreatePost(!showCreatePost)}
-                className="p-2 bg-primary text-primary-foreground rounded-lg"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
+            <FriendlyCard className="space-y-5 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/10 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-primary">
+                    <Sparkles size={14} />
+                    Campus Hub
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">
+                      {homeSection === 'feed'
+                        ? 'Fresh campus feed'
+                        : homeSection === 'groups'
+                          ? 'Student groups'
+                          : homeSection === 'events'
+                            ? 'Events board'
+                            : 'Academic updates'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {homeSection === 'feed'
+                        ? 'A cleaner posting box, highlighted announcements, and quicker campus updates.'
+                        : homeSection === 'groups'
+                          ? 'Join community spaces and post directly into the group conversations you care about.'
+                          : homeSection === 'events'
+                            ? 'Students can request events with title, photo, time, and place for admin approval.'
+                            : 'Admins can publish official academic news, notices, and college updates here.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCreatePost(!showCreatePost)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90"
+                  disabled={homeSection === 'academics' && user?.role !== 'admin'}
+                >
+                  <Plus size={18} />
+                  {homeSection === 'events' ? 'Request Event' : homeSection === 'academics' ? 'Post News' : 'Create'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'feed', label: 'Feed', icon: Home },
+                  { id: 'groups', label: 'Groups', icon: Users },
+                  { id: 'events', label: 'Events', icon: CalendarDays },
+                  { id: 'academics', label: 'Academics', icon: GraduationCap },
+                ].map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => {
+                      setHomeSection(section.id as CommunitySection);
+                      setShowCreatePost(false);
+                      setComposerNotice(null);
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                      homeSection === section.id
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <section.icon size={16} />
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+
+              {homeSection === 'groups' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedGroupId('all')}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                        selectedGroupId === 'all' ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      All groups
+                    </button>
+                    {joinedGroups.map((groupId) => (
+                      <button
+                        key={groupId}
+                        onClick={() => setSelectedGroupId(groupId)}
+                        className={cn(
+                          'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                          selectedGroupId === groupId ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                        )}
+                      >
+                        {getGroupName(groupId)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {COMMUNITY_GROUPS.map((group) => {
+                      const joined = joinedGroups.includes(group.id);
+                      return (
+                        <FriendlyCard
+                          key={group.id}
+                          className={cn('space-y-3 border border-border/80 bg-gradient-to-br', group.accent)}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-bold">{group.name}</p>
+                              <span className="rounded-full bg-background/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                {group.membersLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{group.summary}</p>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              onClick={() => {
+                                toggleGroupMembership(group.id);
+                                setComposerNotice(null);
+                              }}
+                              className={cn(
+                                'rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
+                                joined ? 'bg-foreground text-background' : 'bg-primary text-primary-foreground'
+                              )}
+                            >
+                              {joined ? 'Leave group' : 'Join group'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedGroupId(group.id);
+                                setHomeSection('groups');
+                              }}
+                              className="text-xs font-semibold text-muted-foreground"
+                            >
+                              Open
+                            </button>
+                          </div>
+                        </FriendlyCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </FriendlyCard>
+
+            {composerNotice && (
+              <FriendlyCard className="border border-emerald-500/20 bg-emerald-500/10 text-sm text-emerald-700 dark:text-emerald-300">
+                {composerNotice}
+              </FriendlyCard>
+            )}
 
             {showCreatePost && (
-              <CreatePost 
-                user={user} 
-                isAnonymous={isAnonymous} 
-                onPostCreated={() => {
+              <CreatePost
+                user={user}
+                isAnonymous={isAnonymous}
+                currentSection={homeSection}
+                selectedGroupId={selectedGroupId}
+                joinedGroupIds={joinedGroups}
+                onPostCreated={(createdPost) => {
                   setShowCreatePost(false);
+                  if (createdPost?.approvalStatus === 'pending') {
+                    setComposerNotice('Your event request was submitted for admin approval and will appear after review.');
+                  } else if (createdPost?.contentType === 'announcement') {
+                    setComposerNotice('Announcement published across the feed and groups.');
+                  } else if (createdPost?.contentType === 'academic') {
+                    setComposerNotice('Academic update published successfully.');
+                  } else {
+                    setComposerNotice(null);
+                  }
                   fetchPosts();
-                }} 
+                }}
               />
             )}
-            
-            {posts.length > 0 ? posts.map((post) => (
+
+            {homeSection === 'academics' && user?.role !== 'admin' && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Only admins can create academic news, but everyone can read the published updates here.
+              </FriendlyCard>
+            )}
+
+            {homeSection === 'groups' && joinedGroups.length === 0 && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Join a group above to start posting in group conversations.
+              </FriendlyCard>
+            )}
+
+            {visiblePosts.length > 0 ? visiblePosts.map((post) => {
+              const contentType = normalizeContentType(post.contentType);
+              return (
               <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -262,7 +469,33 @@ export default function App() {
                       {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
                     </div>
                     <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                        {contentType === 'announcement' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+                            <Megaphone size={10} />
+                            Announcement
+                          </span>
+                        )}
+                        {contentType === 'academic' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">
+                            <GraduationCap size={10} />
+                            Academics
+                          </span>
+                        )}
+                        {contentType === 'group' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600">
+                            <Users size={10} />
+                            {getGroupName(post.groupId)}
+                          </span>
+                        )}
+                        {contentType === 'event' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
+                            <CalendarDays size={10} />
+                            Event
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
@@ -305,6 +538,25 @@ export default function App() {
                   />
                 ) : null}
                 <div className="p-4 space-y-2">
+                  {post.title && (
+                    <p className="text-base font-bold text-foreground">{post.title}</p>
+                  )}
+                  {contentType === 'event' && (
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      {post.eventTime && (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={12} />
+                          {new Date(post.eventTime).toLocaleString()}
+                        </span>
+                      )}
+                      {post.place && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin size={12} />
+                          {post.place}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <p className="text-sm text-foreground leading-relaxed">
                     {post.content}
                   </p>
@@ -320,9 +572,18 @@ export default function App() {
                   />
                 </div>
               </FriendlyCard>
-            )) : (
+            );
+            }) : (
               <div className="text-center py-20 text-muted-foreground">
-                <p>No posts yet. Be the first!</p>
+                <p>
+                  {homeSection === 'groups'
+                    ? 'No group posts yet. Share the first update with your community.'
+                    : homeSection === 'events'
+                      ? 'No approved events yet. Request one to get things started.'
+                      : homeSection === 'academics'
+                        ? 'No academic news yet.'
+                        : 'No posts yet. Be the first!'}
+                </p>
               </div>
             )}
           </div>
