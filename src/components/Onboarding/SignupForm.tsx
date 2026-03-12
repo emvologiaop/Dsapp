@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, ArrowRight, CheckCircle2, Camera, Loader2, Plus } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
@@ -25,27 +25,60 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [checkingUsername, setCheckingUsername] = useState(false);
+  const usernameAbortRef = useRef<AbortController | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const checkUsernameAvailability = useCallback(async (username: string) => {
+  // Debounced username availability check
+  useEffect(() => {
+    const username = formData.username;
     if (!username || username.length < 3) {
       setUsernameAvailable(null);
+      setCheckingUsername(false);
       return;
     }
+
     setCheckingUsername(true);
-    try {
-      const res = await fetch(`/api/auth/check-username?username=${encodeURIComponent(username.toLowerCase())}`);
-      if (res.ok) {
-        const data = await res.json();
-        setUsernameAvailable(data.available);
+
+    const debounce = setTimeout(() => {
+      // Cancel any in-flight request
+      if (usernameAbortRef.current) {
+        usernameAbortRef.current.abort();
       }
-    } catch {
-      setUsernameAvailable(null);
-    } finally {
-      setCheckingUsername(false);
-    }
-  }, []);
+      const controller = new AbortController();
+      usernameAbortRef.current = controller;
+
+      fetch(`/api/auth/check-username?username=${encodeURIComponent(username.toLowerCase())}`, {
+        signal: controller.signal,
+      })
+        .then(res => {
+          if (res.ok) return res.json();
+          return null;
+        })
+        .then(data => {
+          if (data && !controller.signal.aborted) {
+            setUsernameAvailable(data.available);
+          }
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError') {
+            setUsernameAvailable(null);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setCheckingUsername(false);
+          }
+        });
+    }, 400);
+
+    return () => {
+      clearTimeout(debounce);
+      if (usernameAbortRef.current) {
+        usernameAbortRef.current.abort();
+      }
+    };
+  }, [formData.username]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -148,9 +181,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
       const newErrors = { ...errors };
       delete newErrors[name];
       setErrors(newErrors);
-    }
-    if (name === 'username') {
-      checkUsernameAvailability(finalValue);
     }
   };
 
