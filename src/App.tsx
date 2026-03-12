@@ -25,7 +25,7 @@ import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { StoryRing } from './components/StoryRing';
 import { StoryViewer } from './components/StoryViewer';
 import { StoryUpload } from './components/StoryUpload';
-import { getStoryTimeRemaining, orderStoriesForViewer, sortStoryGroups, type StoryGroup } from './utils/stories';
+import { getStoryTimeRemaining, orderStoriesForViewer, sortStoryGroups, STORY_LIFETIME_TEXT, type StoryGroup } from './utils/stories';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -281,7 +281,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Feed</h2>
-                <p className="text-sm text-muted-foreground">Stories expire after 24 hours.</p>
+                <p className="text-sm text-muted-foreground">{STORY_LIFETIME_TEXT}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -336,7 +336,7 @@ export default function App() {
                         isOwnStory={isOwnStory}
                       />
                       <span className="text-[11px] text-muted-foreground">
-                        {hasActiveStory && latestStory ? getStoryTimeRemaining(latestStory.expiresAt) : 'Add story'}
+                        {hasActiveStory ? getStoryTimeRemaining(latestStory.expiresAt) : 'Add story'}
                       </span>
                     </button>
                   );
@@ -355,51 +355,54 @@ export default function App() {
               />
             )}
             
-            {posts.length > 0 ? posts.map((post) => (
-              <article key={post._id} className="bg-background border-y border-border/70 -mx-6 overflow-hidden">
-                <div className="px-6 py-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                      {post.isAnonymous ? (
-                        <Ghost size={18} className="text-muted-foreground" />
-                      ) : post.userId?.avatarUrl ? (
-                        <img src={post.userId.avatarUrl} alt={post.userId?.name || 'User'} className="w-full h-full object-cover" />
-                      ) : (
-                        post.userId?.name?.[0] || 'U'
+            {posts.length > 0 ? posts.map((post) => {
+              const postDisplayName = post.isAnonymous ? 'Ghost' : (post.userId?.username || post.userId?.name || 'User');
+
+              return (
+                <article key={post._id} className="bg-background border-y border-border/70 -mx-6 overflow-hidden">
+                  <div className="px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                        {post.isAnonymous ? (
+                          <Ghost size={18} className="text-muted-foreground" />
+                        ) : post.userId?.avatarUrl ? (
+                          <img src={post.userId.avatarUrl} alt={post.userId?.name || 'User'} className="w-full h-full object-cover" />
+                        ) : (
+                          post.userId?.name?.[0] || 'U'
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{postDisplayName}</p>
+                        <p className="text-[11px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!post.isAnonymous && user && post.userId?._id !== user.id && (
+                        <FollowButton
+                          userId={user.id}
+                          targetId={post.userId._id}
+                          initialIsFollowing={post.isFollowing}
+                        />
+                      )}
+                      {!post.isAnonymous && (
+                        <PostOptions
+                          postId={post._id}
+                          userId={user?.id}
+                          postOwnerId={post.userId?._id}
+                          initialContent={post.content}
+                          initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
+                          onDelete={() => {
+                            setPosts(posts.filter(p => p._id !== post._id));
+                          }}
+                          onEdit={(content, mediaUrls) => {
+                            setPosts(posts.map(p =>
+                              p._id === post._id ? { ...p, content, mediaUrls } : p
+                            ));
+                          }}
+                        />
                       )}
                     </div>
-                    <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.username || post.userId?.name || 'User')}</p>
-                      <p className="text-[11px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
-                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!post.isAnonymous && user && post.userId?._id !== user.id && (
-                      <FollowButton
-                        userId={user.id}
-                        targetId={post.userId._id}
-                        initialIsFollowing={post.isFollowing}
-                      />
-                    )}
-                    {!post.isAnonymous && (
-                      <PostOptions
-                        postId={post._id}
-                        userId={user?.id}
-                        postOwnerId={post.userId?._id}
-                        initialContent={post.content}
-                        initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
-                        onDelete={() => {
-                          setPosts(posts.filter(p => p._id !== post._id));
-                        }}
-                        onEdit={(content, mediaUrls) => {
-                          setPosts(posts.map(p =>
-                            p._id === post._id ? { ...p, content, mediaUrls } : p
-                          ));
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
@@ -414,7 +417,7 @@ export default function App() {
                 <div className="px-6 py-4 space-y-3">
                   {post.content && (
                     <p className="text-sm text-foreground leading-relaxed">
-                      <span className="font-semibold mr-2">{post.isAnonymous ? 'ghost' : (post.userId?.username || post.userId?.name || 'user')}</span>
+                      <span className="font-semibold mr-2">{postDisplayName}</span>
                       {post.content}
                     </p>
                   )}
@@ -428,9 +431,9 @@ export default function App() {
                     initialShares={post.sharesCount}
                     onComment={() => setCommentPostId(post._id)}
                   />
-                </div>
-              </article>
-            )) : (
+                  </div>
+                </article>
+            )}) : (
               <div className="text-center py-20 text-muted-foreground">
                 <p>No posts yet. Be the first!</p>
               </div>

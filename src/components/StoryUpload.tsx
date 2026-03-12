@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { X, Upload, Image as ImageIcon, Video, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion } from 'framer-motion';
+import { STORY_LIFETIME_TEXT } from '../utils/stories';
 
 interface StoryUploadProps {
   userId: string;
@@ -195,7 +196,7 @@ export const StoryUpload: React.FC<StoryUploadProps> = ({
                   {caption.length}/200 characters
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Stories disappear automatically after 24 hours.
+                  {STORY_LIFETIME_TEXT}
                 </p>
               </div>
 

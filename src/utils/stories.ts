@@ -23,6 +23,15 @@ export interface StoryGroup {
   hasViewed?: boolean;
 }
 
+export const STORY_LIFETIME_TEXT = 'Stories expire after 24 hours.';
+
+function getLatestStoryTimestamp(stories: StoryItem[]) {
+  return stories.reduce((latestTimestamp, story) => {
+    const storyTimestamp = new Date(story.createdAt).getTime();
+    return storyTimestamp > latestTimestamp ? storyTimestamp : latestTimestamp;
+  }, 0);
+}
+
 export function sortStoryGroups(groups: StoryGroup[], currentUserId: string) {
   return [...groups].sort((left, right) => {
     const leftIsOwn = left.user._id === currentUserId;
@@ -36,8 +45,8 @@ export function sortStoryGroups(groups: StoryGroup[], currentUserId: string) {
       return left.hasViewed ? 1 : -1;
     }
 
-    const leftLatest = left.stories[0]?.createdAt ? new Date(left.stories[0].createdAt).getTime() : 0;
-    const rightLatest = right.stories[0]?.createdAt ? new Date(right.stories[0].createdAt).getTime() : 0;
+    const leftLatest = getLatestStoryTimestamp(left.stories);
+    const rightLatest = getLatestStoryTimestamp(right.stories);
 
     return rightLatest - leftLatest;
   });
@@ -57,7 +66,7 @@ export function getStoryTimeRemaining(expiresAt: string, now = new Date()) {
   }
 
   const minutesRemaining = Math.ceil(timeRemaining / (60 * 1000));
-  if (minutesRemaining < 60) {
+  if (minutesRemaining <= 60) {
     return `${minutesRemaining}m left`;
   }
 
