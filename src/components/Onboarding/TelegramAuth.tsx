@@ -5,7 +5,7 @@ import { FriendlyCard } from '../FriendlyCard';
 import { cn } from '../../lib/utils';
 
 interface TelegramAuthProps {
-  onComplete: () => void;
+  onComplete: (userData?: any) => void;
   initialCode?: string;
 }
 
@@ -44,7 +44,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
       }
       
       if (data.verified) {
-        onComplete();
+        onComplete(data.user);
       } else {
         alert("Verification still pending. Please make sure you've sent the code to @DDU_social_BOT");
       }
@@ -63,7 +63,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
           <Send className="w-10 h-10 text-neon-blue" />
         </div>
         <h2 className="text-3xl font-bold tracking-tighter text-neon-blue">Link Telegram</h2>
-        <p className="text-muted-foreground">Sync your notifications & auth</p>
+        <p className="text-muted-foreground">Telegram linking is required to finish registration and secure your authentication.</p>
       </div>
 
       <FriendlyCard className="w-full space-y-6">
@@ -81,7 +81,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
           </a>
           
           <p className="text-sm text-muted-foreground">
-            2. Send this unique code to the bot:
+            2. Send this unique code to the bot to verify your account:
           </p>
           
           <div className="relative group">
@@ -116,7 +116,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
       </FriendlyCard>
 
       <p className="mt-8 text-xs text-muted-foreground max-w-xs">
-        Linking Telegram allows you to receive real-time DM alerts and recover your account securely.
+        This Telegram step is mandatory for secure sign-in, account recovery, and optional real-time notification delivery.
       </p>
     </div>
   );

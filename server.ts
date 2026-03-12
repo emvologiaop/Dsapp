@@ -90,6 +90,41 @@ app.use('/api', async (req, res, next) => {
 const bot = initBot(io);
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  messages: true,
+  comments: true,
+  likes: true,
+  follows: true,
+  mentions: true,
+  shares: true,
+};
+
+function normalizeNotificationSettings(input: any) {
+  return {
+    messages: typeof input?.messages === 'boolean' ? input.messages : DEFAULT_NOTIFICATION_SETTINGS.messages,
+    comments: typeof input?.comments === 'boolean' ? input.comments : DEFAULT_NOTIFICATION_SETTINGS.comments,
+    likes: typeof input?.likes === 'boolean' ? input.likes : DEFAULT_NOTIFICATION_SETTINGS.likes,
+    follows: typeof input?.follows === 'boolean' ? input.follows : DEFAULT_NOTIFICATION_SETTINGS.follows,
+    mentions: typeof input?.mentions === 'boolean' ? input.mentions : DEFAULT_NOTIFICATION_SETTINGS.mentions,
+    shares: typeof input?.shares === 'boolean' ? input.shares : DEFAULT_NOTIFICATION_SETTINGS.shares,
+  };
+}
+
+function formatAuthUser(user: any) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    department: user.department,
+    role: user.role,
+    telegramAuthCode: user.telegramAuthCode,
+    telegramChatId: user.telegramChatId,
+    telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+    notificationSettings: normalizeNotificationSettings(user.notificationSettings),
+  };
+}
+
 async function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const salt = crypto.randomBytes(16).toString('hex');
@@ -301,14 +336,7 @@ app.post('/api/auth/signup', async (req, res) => {
       telegramAuthCode,
     });
     res.status(201).json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        department: user.department,
-        telegramAuthCode: user.telegramAuthCode,
-      },
+      user: formatAuthUser(user),
     });
   } catch (error) {
     console.error('POST /api/auth/signup error:', error);
@@ -327,14 +355,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     res.json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        department: user.department,
-        telegramAuthCode: user.telegramAuthCode,
-      },
+      user: formatAuthUser(user),
     });
   } catch (error) {
     console.error('POST /api/auth/login error:', error);
@@ -346,7 +367,14 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
   try {
     const { code } = req.params;
     const user = await User.findOne({ telegramAuthCode: code });
-    res.json({ verified: !!(user && user.telegramChatId) });
+    if (!user || !user.telegramChatId) {
+      return res.json({ verified: false });
+    }
+
+    res.json({
+      verified: true,
+      user: formatAuthUser(user),
+    });
   } catch (error) {
     console.error('GET /api/auth/verify-telegram error:', error);
     res.status(500).json({ error: 'Verification failed' });
@@ -749,22 +777,25 @@ app.get('/api/reports/:userId', async (req, res) => {
 app.put('/api/users/:userId/telegram-notifications', async (req, res) => {
   try {
     const { userId } = req.params;
-    const { enabled } = req.body;
+    const { enabled, settings } = req.body;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { telegramNotificationsEnabled: enabled },
-      { new: true }
-    );
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ telegramNotificationsEnabled: user.telegramNotificationsEnabled });
+    user.telegramNotificationsEnabled = enabled;
+    user.notificationSettings = normalizeNotificationSettings(settings ?? user.notificationSettings);
+    await user.save();
+
+    res.json({
+      telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+      notificationSettings: normalizeNotificationSettings(user.notificationSettings),
+    });
   } catch (error) {
     console.error('PUT /api/users/:userId/telegram-notifications error:', error);
     res.status(500).json({ error: 'Failed to update notification preference' });

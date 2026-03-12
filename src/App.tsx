@@ -23,6 +23,7 @@ import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { COMMUNITY_GROUPS, CommunitySection, getGroupName, getVisibleCommunityPosts, normalizeContentType } from './utils/community';
+import { DEFAULT_NOTIFICATION_SETTINGS, NotificationSettings, normalizeNotificationSettings } from './utils/notificationSettings';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -39,6 +40,7 @@ export default function App() {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [homeSection, setHomeSection] = useState<CommunitySection>('feed');
@@ -76,6 +78,7 @@ export default function App() {
         if (parsedUser.telegramNotificationsEnabled !== undefined) {
           setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
         }
+        setNotificationSettings(normalizeNotificationSettings(parsedUser.notificationSettings));
       } catch (e) {
         localStorage.removeItem('ddu_user');
       }
@@ -155,14 +158,25 @@ export default function App() {
   };
 
   const handleOnboardingFinish = (userData: any) => {
-    setUser(userData);
+    const normalizedUser = {
+      ...userData,
+      notificationSettings: normalizeNotificationSettings(userData.notificationSettings),
+    };
+    setUser(normalizedUser);
     setIsOnboarded(true);
-    localStorage.setItem('ddu_user', JSON.stringify(userData));
+    setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
+    setNotificationSettings(normalizedUser.notificationSettings);
+    localStorage.setItem('ddu_user', JSON.stringify(normalizedUser));
   };
 
   const handleProfileUpdate = (updatedUser: any) => {
-    const mergedUser = { ...user, ...updatedUser };
+    const mergedUser = {
+      ...user,
+      ...updatedUser,
+      notificationSettings: normalizeNotificationSettings(updatedUser.notificationSettings ?? user?.notificationSettings),
+    };
     setUser(mergedUser);
+    setNotificationSettings(mergedUser.notificationSettings);
     localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
   };
 
@@ -172,12 +186,19 @@ export default function App() {
       const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newValue })
+        body: JSON.stringify({ enabled: newValue, settings: notificationSettings })
       });
 
       if (response.ok) {
-        setTelegramNotificationsEnabled(newValue);
-        const updatedUser = { ...user, telegramNotificationsEnabled: newValue };
+        const data = await response.json();
+        setTelegramNotificationsEnabled(data.telegramNotificationsEnabled);
+        const nextSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(nextSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: nextSettings,
+        };
         setUser(updatedUser);
         localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
       }
@@ -185,6 +206,52 @@ export default function App() {
       console.error('Failed to toggle Telegram notifications:', error);
     }
   };
+
+  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
+    try {
+      const nextSettings = {
+        ...notificationSettings,
+        [key]: !notificationSettings[key],
+      };
+
+      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: telegramNotificationsEnabled,
+          settings: nextSettings,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const normalizedSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(normalizedSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: normalizedSettings,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Failed to update detailed notification settings:', error);
+    }
+  };
+
+  const notificationSettingLabels: Array<{
+    key: keyof NotificationSettings;
+    title: string;
+    description: string;
+  }> = [
+    { key: 'messages', title: 'Direct messages', description: 'Private chats and replies from other users' },
+    { key: 'comments', title: 'Comments', description: 'Replies and discussions on your posts' },
+    { key: 'likes', title: 'Likes', description: 'When someone likes your post or reel' },
+    { key: 'follows', title: 'Followers', description: 'New followers and follow-backs' },
+    { key: 'mentions', title: 'Mentions & tags', description: 'Mentions, tags, and direct callouts' },
+    { key: 'shares', title: 'Shares & story views', description: 'Post shares and story-view style activity' },
+  ];
 
   const toggleGroupMembership = (groupId: string) => {
     setJoinedGroups((current) => {
@@ -721,7 +788,7 @@ export default function App() {
                     <Bell size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Telegram Notifications</p>
-                      <p className="text-xs text-muted-foreground">Receive notifications via Telegram bot</p>
+                      <p className="text-xs text-muted-foreground">Telegram is required for account authentication and can also deliver alerts.</p>
                     </div>
                   </div>
                   <button
@@ -739,9 +806,51 @@ export default function App() {
                 </div>
                 {!user?.telegramChatId && (
                   <div className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-                    ⚠️ Link your Telegram account first to receive notifications
+                    ⚠️ Link your Telegram account to finish secure authentication and enable bot notifications.
                   </div>
                 )}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold">Detailed notification settings</p>
+                      <p className="text-xs text-muted-foreground">
+                        Choose which updates the Telegram bot should surface for your account.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {notificationSettingLabels.map((setting) => (
+                      <div
+                        key={setting.key}
+                        className={cn(
+                          'flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3 transition-colors',
+                          !telegramNotificationsEnabled && 'opacity-60'
+                        )}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{setting.title}</p>
+                          <p className="text-xs text-muted-foreground">{setting.description}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!telegramNotificationsEnabled}
+                          onClick={() => handleNotificationSettingToggle(setting.key)}
+                          className={cn(
+                            'w-12 h-6 rounded-full relative transition-all disabled:cursor-not-allowed',
+                            notificationSettings[setting.key] ? 'bg-accent' : 'bg-muted'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'absolute top-1 w-4 h-4 bg-white rounded-full transition-all',
+                              notificationSettings[setting.key] ? 'right-1' : 'left-1'
+                            )}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </FriendlyCard>
             </div>
 
