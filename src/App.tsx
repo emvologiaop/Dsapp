@@ -681,7 +681,7 @@ export default function App() {
                     <Zap size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Lite Mode (240p)</p>
-                       <p className="text-[10px] text-muted-foreground">Save data on campus Wi-Fi</p>
+                      <p className="text-xs text-muted-foreground">Save data on campus Wi-Fi</p>
                     </div>
                   </div>
                   <button className="w-12 h-6 bg-accent rounded-full relative transition-all">
@@ -694,7 +694,7 @@ export default function App() {
                     <Shield size={18} className="text-purple-400" />
                     <div>
                       <p className="text-sm font-medium">Anonymous Mode</p>
-                       <p className="text-[10px] text-muted-foreground">Post as Ghost</p>
+                      <p className="text-xs text-muted-foreground">Post as Ghost</p>
                     </div>
                   </div>
                   <button 
@@ -721,7 +721,7 @@ export default function App() {
                     <Bell size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Telegram Notifications</p>
-                       <p className="text-[10px] text-muted-foreground">Receive notifications via Telegram bot</p>
+                      <p className="text-xs text-muted-foreground">Receive notifications via Telegram bot</p>
                     </div>
                   </div>
                   <button
