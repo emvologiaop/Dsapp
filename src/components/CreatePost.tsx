@@ -47,6 +47,46 @@ export const CreatePost: React.FC<CreatePostProps> = ({
 
   const userRole = user?.role || 'user';
   const availableGroups = useMemo(() => COMMUNITY_GROUPS.filter((group) => joinedGroupIds.includes(group.id)), [joinedGroupIds]);
+  const composerTitle =
+    contentType === 'event'
+      ? 'Request an event'
+      : contentType === 'academic'
+        ? 'Post academic news'
+        : contentType === 'group'
+          ? 'Share with your group'
+          : contentType === 'announcement'
+            ? 'Publish announcement'
+            : 'Share with the campus';
+  const composerDescription =
+    contentType === 'event'
+      ? 'Events are reviewed by admins before they appear publicly.'
+      : contentType === 'academic'
+        ? 'Academic updates are reserved for admins.'
+        : contentType === 'group'
+          ? 'Posts stay inside the selected community group.'
+          : contentType === 'announcement'
+            ? 'Announcements appear across the main feed and group spaces.'
+            : 'Use the refreshed composer to post quick campus updates.';
+  const contentPlaceholder =
+    contentType === 'event'
+      ? 'Describe the event agenda, who should attend, and any registration details...'
+      : contentType === 'academic'
+        ? 'Share the full academic update for students...'
+        : contentType === 'announcement'
+          ? 'Write the announcement or ad that should appear across the platform...'
+          : contentType === 'group'
+            ? 'What does your group need to know?'
+            : isAnonymous
+              ? 'Post anonymously as DDU Ghost...'
+              : "What's happening on campus?";
+  const submitLabel =
+    contentType === 'event'
+      ? 'Request'
+      : contentType === 'announcement'
+        ? 'Publish'
+        : contentType === 'academic'
+          ? 'Post News'
+          : 'Post';
 
   useEffect(() => {
     if (currentSection === 'groups') {
@@ -184,20 +224,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({
     <FriendlyCard className="space-y-4 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-bold">
-            {contentType === 'event' ? 'Request an event' : contentType === 'academic' ? 'Post academic news' : contentType === 'group' ? 'Share with your group' : contentType === 'announcement' ? 'Publish announcement' : 'Share with the campus'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {contentType === 'event'
-              ? 'Events are reviewed by admins before they appear publicly.'
-              : contentType === 'academic'
-                ? 'Academic updates are reserved for admins.'
-                : contentType === 'group'
-                  ? 'Posts stay inside the selected community group.'
-                  : contentType === 'announcement'
-                    ? 'Announcements appear across the main feed and group spaces.'
-                    : 'Use the refreshed composer to post quick campus updates.'}
-          </p>
+          <p className="text-sm font-bold">{composerTitle}</p>
+          <p className="text-xs text-muted-foreground">{composerDescription}</p>
         </div>
         {currentSection === 'feed' && userRole === 'admin' && (
           <div className="flex rounded-xl bg-muted p-1">
@@ -288,22 +316,10 @@ export const CreatePost: React.FC<CreatePostProps> = ({
           {contentType === 'feed' && isAnonymous ? <Ghost size={20} className="text-muted-foreground" /> : (user?.name?.[0] || 'U')}
         </div>
         <div className="flex-1">
-          <MentionInput
-            value={content}
-            onChange={setContent}
-            placeholder={
-              contentType === 'event'
-                ? 'Describe the event agenda, who should attend, and any registration details...'
-                : contentType === 'academic'
-                  ? 'Share the full academic update for students...'
-                  : contentType === 'announcement'
-                    ? 'Write the announcement or ad that should appear across the platform...'
-                    : contentType === 'group'
-                      ? 'What does your group need to know?'
-                      : isAnonymous
-                        ? 'Post anonymously as DDU Ghost...'
-                        : "What's happening on campus?"
-            }
+            <MentionInput
+              value={content}
+              onChange={setContent}
+            placeholder={contentPlaceholder}
             textareaClassName="border-0 focus:ring-0 p-0"
             rows={3}
             disabled={isPosting}
@@ -378,15 +394,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
           className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
         >
           {isPosting && <Loader2 size={16} className="animate-spin" />}
-          {isPosting
-            ? (uploadProgress > 0 ? `${Math.round(uploadProgress)}%` : "Posting...")
-            : contentType === 'event'
-              ? 'Request'
-              : contentType === 'announcement'
-                ? 'Publish'
-                : contentType === 'academic'
-                  ? 'Post News'
-                  : 'Post'}
+          {isPosting ? (uploadProgress > 0 ? `${Math.round(uploadProgress)}%` : "Posting...") : submitLabel}
         </button>
       </div>
     </FriendlyCard>

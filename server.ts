@@ -416,7 +416,13 @@ app.post('/api/posts', async (req, res) => {
     }
 
     if (normalizedContentType === 'event') {
-      const photoCount = Array.isArray(mediaUrls) ? mediaUrls.length : mediaUrl ? 1 : 0;
+      let photoCount = 0;
+      if (Array.isArray(mediaUrls)) {
+        photoCount = mediaUrls.length;
+      } else if (mediaUrl) {
+        photoCount = 1;
+      }
+
       if (!title || !place || !eventTime || !photoCount) {
         return res.status(400).json({ error: 'Events require title, description, photo, time, and place' });
       }
