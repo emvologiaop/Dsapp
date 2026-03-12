@@ -81,7 +81,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="w-full bg-background rounded-t-3xl shadow-xl max-h-[80vh] flex flex-col"
+          className="fixed inset-0 w-full bg-background shadow-xl flex flex-col md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[80vh] md:rounded-t-3xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

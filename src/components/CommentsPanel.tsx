@@ -126,7 +126,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
         initial={{ opacity: 0, y: 100 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 100 }}
-        className="fixed bottom-0 left-0 right-0 bg-background rounded-t-2xl z-50 max-h-[75vh] flex flex-col shadow-2xl border border-border"
+        className="fixed inset-0 bg-background z-50 flex flex-col shadow-2xl md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[75vh] md:rounded-t-2xl md:border md:border-border"
       >
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h3 className="font-bold text-lg">Comments</h3>
