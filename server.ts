@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -7,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import { connectDB } from './src/db.js';
 import { initBot } from './bot/index.js';
 import { User } from './src/models/User.js';
@@ -43,12 +45,30 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
+// Enable gzip/deflate compression for all HTTP responses
+app.use(compression());
+
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '100kb' }));
 // Use higher limit only for upload endpoints
 app.use('/api/posts', express.json({ limit: '50mb' }));
 app.use('/api/reels', express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve static assets with long-term caching for fingerprinted files
+app.use(
+  express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1y',
+    immutable: true,
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      // index.html must not be cached so the browser always gets the latest entry point
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  })
+);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -61,7 +81,10 @@ app.use(limiter);
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
   try {
-    await connectDB();
+    // Skip connectDB() when Mongoose is already connected (readyState 1)
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
     next();
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
