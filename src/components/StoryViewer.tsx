@@ -121,7 +121,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
 
   const handleDelete = async () => {
     try {
-      const res = await fetch(`/api/stories/${currentStory._id}`, {
+      const res = await fetch(`/api/stories/${currentStory._id}?userId=${currentUserId}`, {
         method: 'DELETE'
       });
 

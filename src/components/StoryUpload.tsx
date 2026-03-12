@@ -50,23 +50,25 @@ export const StoryUpload: React.FC<StoryUploadProps> = ({
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !mediaType || !preview) return;
+    if (!selectedFile || !mediaType) return;
 
     setIsUploading(true);
 
     try {
-      // For now, we'll use base64 encoding for the media
-      // In production, you should upload to cloud storage (R2, S3, etc.)
+      const formData = new FormData();
+      formData.append('userId', userId);
+      formData.append('media', selectedFile);
+      formData.append('mediaType', mediaType);
+      if (caption.trim()) {
+        formData.append('caption', caption.trim());
+      }
+      if (mediaType === 'video') {
+        formData.append('duration', '15');
+      }
+
       const res = await fetch('/api/stories', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          mediaUrl: preview,
-          mediaType,
-          caption: caption.trim() || undefined,
-          duration: mediaType === 'video' ? 15 : undefined // Default 15s for videos
-        })
+        body: formData
       });
 
       if (res.ok) {
@@ -191,6 +193,9 @@ export const StoryUpload: React.FC<StoryUploadProps> = ({
                 />
                 <p className="text-xs text-muted-foreground mt-1">
                   {caption.length}/200 characters
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Stories disappear automatically after 24 hours.
                 </p>
               </div>
 

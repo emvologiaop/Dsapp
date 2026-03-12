@@ -22,6 +22,10 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { StoryRing } from './components/StoryRing';
+import { StoryViewer } from './components/StoryViewer';
+import { StoryUpload } from './components/StoryUpload';
+import { getStoryTimeRemaining, orderStoriesForViewer, sortStoryGroups, type StoryGroup } from './utils/stories';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -40,6 +44,9 @@ export default function App() {
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
+  const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
+  const [showStoryUpload, setShowStoryUpload] = useState(false);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -91,15 +98,18 @@ export default function App() {
   useEffect(() => {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
+      fetchStories();
     }
     if (isOnboarded && activeTab === 'chat') {
       fetchChats();
     }
-  }, [isOnboarded, activeTab]);
+  }, [isOnboarded, activeTab, user?.id]);
 
   const fetchChats = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/users/${user?.id}/chats`);
+      const response = await fetch(`/api/users/${user.id}/chats`);
       if (response.ok) {
         const data = await response.json();
         setChats(data);
@@ -110,8 +120,10 @@ export default function App() {
   };
 
   const fetchPosts = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/posts?userId=${user?.id}`);
+      const response = await fetch(`/api/posts?userId=${user.id}`);
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -122,6 +134,22 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error fetching posts:", error);
+    }
+  };
+
+  const fetchStories = async () => {
+    if (!user?.id) return;
+
+    try {
+      const response = await fetch(`/api/stories?userId=${user.id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch stories');
+      }
+
+      const data = await response.json();
+      setStoryGroups(sortStoryGroups(data, user.id));
+    } catch (error) {
+      console.error('Error fetching stories:', error);
     }
   };
 
@@ -180,6 +208,23 @@ export default function App() {
     return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
 
+  const sortedStoryGroups = user?.id ? sortStoryGroups(storyGroups, user.id) : storyGroups;
+  const ownStoryGroup = sortedStoryGroups.find((group) => group.user._id === user?.id);
+  const storyTrayGroups = ownStoryGroup
+    ? sortedStoryGroups
+    : user
+      ? [{
+          user: {
+            _id: user.id,
+            name: user.name,
+            username: user.username,
+            avatarUrl: user.avatarUrl
+          },
+          stories: [],
+          hasViewed: false
+        }, ...sortedStoryGroups]
+      : sortedStoryGroups;
+
   return (
     <div className="min-h-screen bg-background text-foreground pb-24">
       {/* Header */}
@@ -234,13 +279,69 @@ export default function App() {
         {activeTab === 'home' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Feed</h2>
-              <button 
-                onClick={() => setShowCreatePost(!showCreatePost)}
-                className="p-2 bg-primary text-primary-foreground rounded-lg"
-              >
-                <Plus size={20} />
-              </button>
+              <div>
+                <h2 className="text-xl font-bold">Feed</h2>
+                <p className="text-sm text-muted-foreground">Stories expire after 24 hours.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowStoryUpload(true)}
+                  className="p-2 rounded-full border border-border bg-background hover:bg-muted transition-colors"
+                  aria-label="Add story"
+                >
+                  <Plus size={20} />
+                </button>
+                <button 
+                  onClick={() => setShowCreatePost(!showCreatePost)}
+                  className="p-2 bg-primary text-primary-foreground rounded-full"
+                  aria-label="Create post"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="border-y border-border/70 bg-background -mx-6 px-6 py-4">
+              <div className="flex gap-4 overflow-x-auto pb-1">
+                {storyTrayGroups.map((group) => {
+                  const hasActiveStory = group.stories.length > 0;
+                  const latestStory = group.stories[0];
+                  const isOwnStory = group.user._id === user?.id;
+
+                  return (
+                    <button
+                      key={group.user._id}
+                      type="button"
+                      onClick={() => {
+                        if (!hasActiveStory && isOwnStory) {
+                          setShowStoryUpload(true);
+                          return;
+                        }
+
+                        if (hasActiveStory) {
+                          setActiveStoryGroup({
+                            ...group,
+                            stories: orderStoriesForViewer(group.stories)
+                          });
+                        }
+                      }}
+                      className="flex shrink-0 flex-col items-center gap-2 bg-transparent"
+                    >
+                      <StoryRing
+                        hasActiveStory={hasActiveStory}
+                        hasViewedAll={group.hasViewed}
+                        avatarUrl={group.user.avatarUrl}
+                        name={group.user.name}
+                        username={group.user._id === user?.id ? 'Your story' : group.user.username}
+                        isOwnStory={isOwnStory}
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        {hasActiveStory && latestStory ? getStoryTimeRemaining(latestStory.expiresAt) : 'Add story'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {showCreatePost && (
@@ -255,15 +356,21 @@ export default function App() {
             )}
             
             {posts.length > 0 ? posts.map((post) => (
-              <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
-                <div className="p-4 flex items-center justify-between">
+              <article key={post._id} className="bg-background border-y border-border/70 -mx-6 overflow-hidden">
+                <div className="px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                      {post.isAnonymous ? (
+                        <Ghost size={18} className="text-muted-foreground" />
+                      ) : post.userId?.avatarUrl ? (
+                        <img src={post.userId.avatarUrl} alt={post.userId?.name || 'User'} className="w-full h-full object-cover" />
+                      ) : (
+                        post.userId?.name?.[0] || 'U'
+                      )}
                     </div>
                     <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
-                      <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
+                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.username || post.userId?.name || 'User')}</p>
+                      <p className="text-[11px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -304,10 +411,13 @@ export default function App() {
                     onLike={() => handleDoubleTapLike(post._id)}
                   />
                 ) : null}
-                <div className="p-4 space-y-2">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {post.content}
-                  </p>
+                <div className="px-6 py-4 space-y-3">
+                  {post.content && (
+                    <p className="text-sm text-foreground leading-relaxed">
+                      <span className="font-semibold mr-2">{post.isAnonymous ? 'ghost' : (post.userId?.username || post.userId?.name || 'user')}</span>
+                      {post.content}
+                    </p>
+                  )}
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -319,7 +429,7 @@ export default function App() {
                     onComment={() => setCommentPostId(post._id)}
                   />
                 </div>
-              </FriendlyCard>
+              </article>
             )) : (
               <div className="text-center py-20 text-muted-foreground">
                 <p>No posts yet. Be the first!</p>
@@ -540,6 +650,27 @@ export default function App() {
 
       {showSearch && (
         <SearchPanel onClose={() => setShowSearch(false)} />
+      )}
+
+      {activeStoryGroup && user && (
+        <StoryViewer
+          stories={activeStoryGroup.stories}
+          currentUserId={user.id}
+          onClose={() => {
+            setActiveStoryGroup(null);
+            fetchStories();
+          }}
+        />
+      )}
+
+      {showStoryUpload && user && (
+        <StoryUpload
+          userId={user.id}
+          onClose={() => setShowStoryUpload(false)}
+          onUploadSuccess={() => {
+            fetchStories();
+          }}
+        />
       )}
 
         {/* Bottom Nav */}
