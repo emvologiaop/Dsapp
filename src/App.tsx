@@ -768,7 +768,7 @@ export default function App() {
                     onClick={() => setIsAnonymous(!isAnonymous)}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                       isAnonymous ? "bg-accent" : "bg-muted"
+                      isAnonymous ? "bg-accent" : "bg-muted"
                     )}
                   >
                     <div className={cn(
@@ -795,7 +795,7 @@ export default function App() {
                     onClick={handleTelegramNotificationsToggle}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                       telegramNotificationsEnabled ? "bg-accent" : "bg-muted"
+                      telegramNotificationsEnabled ? "bg-accent" : "bg-muted"
                     )}
                   >
                     <div className={cn(
