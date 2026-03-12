@@ -83,7 +83,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, content: text, isAnonymous }),
+        body: JSON.stringify({ userId, content: text, isAnonymous: false }),
       });
 
       if (res.ok) {
@@ -105,6 +105,9 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
         }
         setText('');
         setReplyingTo(null);
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error || 'Failed to post comment.');
       }
     } catch (error) {
       console.error('Failed to post comment:', error);
@@ -133,6 +136,9 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
           <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+          Comments always use your real profile.
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -227,7 +233,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleSubmit()}
-              placeholder={isAnonymous ? 'Comment anonymously...' : 'Add a comment...'}
+              placeholder="Add a comment..."
               className="flex-1 bg-transparent outline-none text-sm py-1"
             />
             <button

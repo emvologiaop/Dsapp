@@ -4,6 +4,7 @@ import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, Ar
 import { FriendlyCard } from '../FriendlyCard';
 import { Input } from '../ui/Input';
 import { cn } from '../../lib/utils';
+import { TermsOfServiceModal } from '../TermsOfServiceModal';
 
 interface SignupFormProps {
   onComplete: (data: any) => void;
@@ -23,6 +24,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showTerms, setShowTerms] = useState(false);
 
   const validateStep = () => {
     const newErrors: Record<string, string> = {};
@@ -211,12 +213,24 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                 icon={<GraduationCap className="w-5 h-5" />}
               />
             </div>
-            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground">
-                By completing this, you agree to the DDU Social community guidelines and privacy policy.
-              </p>
-            </div>
+              <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <div className="text-xs text-muted-foreground space-y-2">
+                  <p>By completing this, you agree to the DDU Social Terms and community guidelines.</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowTerms(true)}
+                    className="text-primary font-semibold hover:underline"
+                  >
+                    Read the Terms of Service
+                  </button>
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li>Ghost posts stay anonymous to other users, but moderators can review them if reported.</li>
+                    <li>Ghost mode unlocks after 7 days.</li>
+                    <li>Comments are never anonymous.</li>
+                  </ul>
+                </div>
+              </div>
           </motion.div>
         );
       default:
@@ -274,6 +288,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
           </button>
         </p>
       )}
+      {showTerms && <TermsOfServiceModal onClose={() => setShowTerms(false)} />}
     </div>
   );
 };

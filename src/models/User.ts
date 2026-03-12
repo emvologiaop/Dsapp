@@ -24,6 +24,7 @@ export interface IUser extends Document {
   telegramChatId?: string;
   telegramAuthCode?: string;
   telegramNotificationsEnabled?: boolean;
+  postsAsGhost: mongoose.Types.ObjectId[];
   followingIds: mongoose.Types.ObjectId[];
   followerIds: mongoose.Types.ObjectId[];
   role: 'user' | 'admin';
@@ -61,6 +62,7 @@ const UserSchema = new Schema<IUser>(
     telegramChatId: { type: String },
     telegramAuthCode: { type: String },
     telegramNotificationsEnabled: { type: Boolean, default: false },
+    postsAsGhost: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
     followingIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     followerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
