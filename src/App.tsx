@@ -644,7 +644,7 @@ export default function App() {
 
             {user?.role === 'admin' && (
               <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Admin</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Admin</h3>
                 <FriendlyCard
                   onClick={() => setShowAdminDashboard(true)}
                   className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
@@ -661,27 +661,27 @@ export default function App() {
             )}
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Profile</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Profile</h3>
               <FriendlyCard className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-2xl font-bold text-accent">
                   {user?.name?.[0] || 'U'}
                 </div>
                 <div>
                   <p className="font-bold text-lg">{user?.name || 'User'}</p>
-                  <p className="text-sm text-white/40">@{user?.username || 'username'}</p>
+                  <p className="text-sm text-muted-foreground">@{user?.username || 'username'}</p>
                 </div>
               </FriendlyCard>
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Data & Privacy</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Data & Privacy</h3>
               <FriendlyCard className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Zap size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Lite Mode (240p)</p>
-                      <p className="text-[10px] text-black/40">Save data on campus Wi-Fi</p>
+                       <p className="text-[10px] text-muted-foreground">Save data on campus Wi-Fi</p>
                     </div>
                   </div>
                   <button className="w-12 h-6 bg-accent rounded-full relative transition-all">
@@ -694,14 +694,14 @@ export default function App() {
                     <Shield size={18} className="text-purple-400" />
                     <div>
                       <p className="text-sm font-medium">Anonymous Mode</p>
-                      <p className="text-[10px] text-black/40">Post as Ghost</p>
+                       <p className="text-[10px] text-muted-foreground">Post as Ghost</p>
                     </div>
                   </div>
                   <button 
                     onClick={() => setIsAnonymous(!isAnonymous)}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                      isAnonymous ? "bg-accent" : "bg-black/10"
+                       isAnonymous ? "bg-accent" : "bg-muted"
                     )}
                   >
                     <div className={cn(
@@ -714,21 +714,21 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Integrations</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Integrations</h3>
               <FriendlyCard className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Bell size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Telegram Notifications</p>
-                      <p className="text-[10px] text-black/40">Receive notifications via Telegram bot</p>
+                       <p className="text-[10px] text-muted-foreground">Receive notifications via Telegram bot</p>
                     </div>
                   </div>
                   <button
                     onClick={handleTelegramNotificationsToggle}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                      telegramNotificationsEnabled ? "bg-accent" : "bg-black/10"
+                       telegramNotificationsEnabled ? "bg-accent" : "bg-muted"
                     )}
                   >
                     <div className={cn(
@@ -762,7 +762,7 @@ export default function App() {
                   href="https://t.me/dev_envologia"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
+                   className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   🐛 Report Bug to @dev_envologia
                 </a>
@@ -771,7 +771,7 @@ export default function App() {
                   href="https://t.me/dev_envologia"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
+                   className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   💡 Suggest Feature to @dev_envologia
                 </a>
