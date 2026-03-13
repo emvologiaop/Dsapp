@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
-import { io } from 'socket.io-client';
+import socket from '../services/socket';
 
 interface Notification {
   id: string;
@@ -20,6 +20,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userId, onOp
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
+    if (!userId) return;
+
     const fetchNotifications = async () => {
       const response = await fetch(`/api/notifications/${userId}`);
       if (response.ok) {
@@ -29,13 +31,14 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userId, onOp
     };
     fetchNotifications();
 
-    const socket = io();
-    socket.on('new_notification', (notification: Notification) => {
+    const handleNewNotification = (notification: Notification) => {
       setNotifications(prev => [notification, ...prev]);
-    });
+    };
+
+    socket.on('new_notification', handleNewNotification);
 
     return () => {
-      socket.disconnect();
+      socket.off('new_notification', handleNewNotification);
     };
   }, [userId]);
 
