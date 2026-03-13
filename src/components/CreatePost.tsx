@@ -56,7 +56,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
           ? 'Share with your group'
           : contentType === 'announcement'
             ? 'Publish announcement'
-            : 'Share with the campus';
+            : 'Share an update';
   const composerDescription =
     contentType === 'event'
       ? 'Events are reviewed by admins before they appear publicly.'
@@ -66,7 +66,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
           ? 'Posts stay inside the selected community group.'
           : contentType === 'announcement'
             ? 'Announcements appear across the main feed and group spaces.'
-            : 'Use the refreshed composer to post quick campus updates.';
+            : 'Post a quick update with text or photos for everyone.';
   const contentPlaceholder =
     contentType === 'event'
       ? 'Describe the event agenda, who should attend, and any registration details...'
@@ -78,7 +78,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
             ? 'What does your group need to know?'
             : isAnonymous
               ? 'Post anonymously as DDU Ghost...'
-              : "What's happening on campus?";
+              : 'Share what is on your mind.';
   const submitLabel =
     contentType === 'event'
       ? 'Request'

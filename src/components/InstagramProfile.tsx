@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface InstagramProfileProps {
   userId: string;
   currentUserId: string;
+  currentUser?: any;
   onEditProfile?: () => void;
   onBack?: () => void;
   onMessageUser?: (user: any) => void;
@@ -18,12 +19,14 @@ type ProfileTab = 'posts' | 'reels' | 'tagged';
 export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   userId,
   currentUserId,
+  currentUser,
   onEditProfile,
   onBack,
   onMessageUser,
 }) => {
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>('posts');
   const [posts, setPosts] = useState<any[]>([]);
   const [reels, setReels] = useState<any[]>([]);
@@ -37,17 +40,44 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     if (activeTab === 'tagged') {
       fetchTaggedContent();
     }
-  }, [userId, currentUserId, activeTab]);
+  }, [userId, currentUserId, currentUser, activeTab]);
 
   const fetchProfile = async () => {
+    setIsLoading(true);
+    setProfileError(null);
     try {
       const res = await fetch(`/api/users/${userId}/profile?currentUserId=${currentUserId}`);
       if (res.ok) {
         const data = await res.json();
         setProfile(data);
+        return;
       }
+
+      if (res.status === 404 && currentUser && userId === currentUserId) {
+        setProfile({
+          id: currentUser.id,
+          name: currentUser.name,
+          username: currentUser.username,
+          avatarUrl: currentUser.avatarUrl || '',
+          bio: currentUser.bio || '',
+          website: currentUser.website || '',
+          location: currentUser.location || '',
+          department: currentUser.department || '',
+          isVerified: currentUser.isVerified || false,
+          followersCount: currentUser.followersCount || currentUser.followerIds?.length || 0,
+          followingCount: currentUser.followingCount || currentUser.followingIds?.length || 0,
+          isFollowing: false,
+        });
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      setProfile(null);
+      setProfileError(data?.error || 'Unable to load profile.');
     } catch (error) {
       console.error('Failed to fetch profile:', error);
+      setProfile(null);
+      setProfileError('Unable to load profile.');
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +133,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   if (!profile) {
     return (
       <div className="text-center py-20 text-muted-foreground">
-        <p>User not found.</p>
+        <p>{profileError || 'Profile is unavailable right now.'}</p>
       </div>
     );
   }

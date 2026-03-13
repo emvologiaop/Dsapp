@@ -566,7 +566,7 @@ export default function App() {
                   <div>
                     <h2 className="text-2xl font-bold">
                       {homeSection === 'feed'
-                        ? 'Fresh campus feed'
+                        ? 'Campus feed'
                         : homeSection === 'groups'
                           ? 'Student groups'
                           : homeSection === 'events'
@@ -575,7 +575,7 @@ export default function App() {
                     </h2>
                     <p className="text-sm text-muted-foreground">
                       {homeSection === 'feed'
-                        ? 'A cleaner posting box, highlighted announcements, and quicker campus updates.'
+                        ? 'Share updates, announcements, and quick posts in one place.'
                         : homeSection === 'groups'
                           ? 'Join community spaces and post directly into the group conversations you care about.'
                           : homeSection === 'events'
@@ -848,6 +848,7 @@ export default function App() {
           <InstagramProfile
             userId={viewingProfileUserId || user.id}
             currentUserId={user.id}
+            currentUser={user}
             onEditProfile={() => setShowEditProfile(true)}
             onBack={viewingProfileUserId && viewingProfileUserId !== user.id ? openOwnProfile : undefined}
             onMessageUser={startChatWithUser}
