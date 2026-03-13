@@ -28,12 +28,9 @@ import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
-import {
-  canUseGhostMode,
-  GHOST_MODE_MIN_ACCOUNT_AGE_DAYS,
-  GHOST_POST_RATE_LIMIT_HOURS,
-  stripMentionsFromGhostContent,
-} from './src/utils/ghostPolicy.js';
+import { extractHashtags, normalizeHashtagQuery } from './src/utils/socialText.js';
+import { sanitizeSearchQuery } from './src/utils/validation.js';
+import { getActorRateLimitKey, getRequestOrigin, isOriginAllowed, shouldBypassOriginCheck } from './src/utils/requestSecurity.js';
 
 dotenv.config();
 
@@ -66,6 +63,51 @@ const limiter = rateLimit({
   skip: (req) => req.path === '/api/telegram/webhook',
 });
 app.use(limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+});
+
+const searchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `search:${getActorRateLimitKey(req)}`,
+  message: { error: 'Too many search requests. Please slow down.' },
+});
+
+const mutationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `mutation:${getActorRateLimitKey(req)}`,
+  skip: (req) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method.toUpperCase()),
+  message: { error: 'Too many write requests. Please wait and try again.' },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `upload:${getActorRateLimitKey(req)}`,
+  message: { error: 'Upload limit reached. Please try again later.' },
+});
+
+app.use('/api/auth', authLimiter);
+app.use('/api/search', searchLimiter);
+app.use('/api/users/search/mentions', searchLimiter);
+app.use(['/api/posts', '/api/reels', '/api/comments', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
+app.use('/api/users/:targetId/follow', mutationLimiter);
+app.use('/api/users/:userId/profile', mutationLimiter);
+app.use('/api/users/:userId/telegram-notifications', mutationLimiter);
+app.use(['/api/images', '/api/reels/upload-r2', '/api/stories'], uploadLimiter);
 
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
@@ -456,9 +498,12 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers, contentType, groupId, title, place, eventTime } = req.body;
-    if (!userId || !content) {
-      return res.status(400).json({ error: 'userId and content are required' });
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
+    const normalizedContent = typeof content === 'string' ? content.trim() : '';
+    const hasMedia = Boolean(mediaUrl) || (Array.isArray(mediaUrls) && mediaUrls.length > 0);
+
+    if (!userId || (!normalizedContent && !hasMedia)) {
+      return res.status(400).json({ error: 'userId and either content or media are required' });
     }
 
     const author = await User.findById(userId).select('role').lean();
@@ -495,14 +540,13 @@ app.post('/api/posts', async (req, res) => {
     const approvalStatus = normalizedContentType === 'event' && author.role !== 'admin' ? 'pending' : 'approved';
 
     // Extract mentions from content
-    const mentions = creatingGhostPost ? [] : extractMentions(normalizedContent);
-    const normalizedTaggedUsers = creatingGhostPost ? [] : (taggedUsers || []);
+    const mentions = extractMentions(normalizedContent);
+    const hashtags = extractHashtags(normalizedContent);
 
     const post = await Post.create({
       userId,
-      title,
-      content,
-      isAnonymous: normalizedContentType === 'feed' ? Boolean(isAnonymous) : false,
+      content: normalizedContent,
+      isAnonymous: Boolean(isAnonymous),
       mediaUrl,
       mediaUrls: mediaUrls || [],
       contentType: normalizedContentType,
@@ -511,7 +555,8 @@ app.post('/api/posts', async (req, res) => {
       eventTime: eventTime ? new Date(eventTime) : undefined,
       approvalStatus,
       taggedUsers: taggedUsers || [],
-      mentions
+      mentions,
+      hashtags,
     });
 
     if (creatingGhostPost) {
@@ -1265,16 +1310,19 @@ app.post('/api/reels', async (req, res) => {
     }
 
     // Extract mentions from caption
-    const mentions = caption ? extractMentions(caption) : [];
+    const normalizedCaption = typeof caption === 'string' ? caption.trim() : '';
+    const mentions = normalizedCaption ? extractMentions(normalizedCaption) : [];
+    const hashtags = normalizedCaption ? extractHashtags(normalizedCaption) : [];
 
     // Store base64 data URL as the video URL (suitable for moderate-size videos)
     const reel = await Reel.create({
       userId,
       videoUrl: videoData,
-      caption: caption || '',
+      caption: normalizedCaption,
       isAnonymous: Boolean(isAnonymous),
       taggedUsers: taggedUsers || [],
-      mentions
+      mentions,
+      hashtags,
     });
 
     // Send mention notifications
@@ -1623,7 +1671,12 @@ app.get('/api/search', async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
 
-    const searchRegex = { $regex: query, $options: 'i' };
+    const queryString = sanitizeSearchQuery(query);
+    if (!queryString) {
+      return res.status(400).json({ error: 'Search query is invalid' });
+    }
+    const searchRegex = { $regex: queryString, $options: 'i' };
+    const normalizedHashtag = normalizeHashtagQuery(queryString);
     const limitNum = Math.min(parseInt(limit as string) || 10, 50);
 
     const results: any = {
@@ -1648,7 +1701,10 @@ app.get('/api/search', async (req, res) => {
     // Search posts
     if (type === 'all' || type === 'posts') {
       results.posts = await Post.find({
-        content: searchRegex,
+        $or: [
+          { content: searchRegex },
+          ...(normalizedHashtag ? [{ hashtags: normalizedHashtag }] : []),
+        ],
         isDeleted: { $ne: true },
       })
         .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
@@ -1661,7 +1717,10 @@ app.get('/api/search', async (req, res) => {
     // Search reels
     if (type === 'all' || type === 'reels') {
       results.reels = await Reel.find({
-        caption: searchRegex,
+        $or: [
+          { caption: searchRegex },
+          ...(normalizedHashtag ? [{ hashtags: normalizedHashtag }] : []),
+        ],
         isDeleted: { $ne: true },
       })
         .select('userId caption thumbnailUrl duration likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
@@ -1980,10 +2039,15 @@ app.get('/api/users/search/mentions', async (req, res) => {
       return res.status(400).json({ error: 'query is required' });
     }
 
+    const sanitizedQuery = sanitizeSearchQuery(query, 30);
+    if (!sanitizedQuery) {
+      return res.status(400).json({ error: 'query is invalid' });
+    }
+
     const users = await User.find({
       $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { name: { $regex: query, $options: 'i' } }
+        { username: { $regex: sanitizedQuery, $options: 'i' } },
+        { name: { $regex: sanitizedQuery, $options: 'i' } }
       ],
       _id: { $ne: currentUserId } // Exclude current user
     })

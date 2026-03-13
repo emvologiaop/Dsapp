@@ -18,9 +18,10 @@ interface CommentsPanelProps {
   userId: string;
   isAnonymous: boolean;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
 }
 
-export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, isAnonymous, onClose }) => {
+export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, isAnonymous, onClose, onViewProfile }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
   const [isPosting, setIsPosting] = useState(false);
@@ -152,16 +153,22 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
                     {comment.isAnonymous ? <Ghost size={14} className="text-muted-foreground" /> : (comment.userId?.name?.[0] || 'U')}
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-bold">
-                        {comment.isAnonymous ? 'Ghost' : (comment.userId?.name || 'User')}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {new Date(comment.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground mt-0.5">{comment.content}</p>
-
+                    <button
+                      type="button"
+                      onClick={() => !comment.isAnonymous && onViewProfile?.(comment.userId?._id)}
+                      disabled={comment.isAnonymous || !comment.userId?._id}
+                      className="text-left disabled:cursor-default"
+                    >
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm font-bold hover:text-primary transition-colors">
+                          {comment.isAnonymous ? 'Ghost' : (comment.userId?.name || 'User')}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(comment.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground mt-0.5">{comment.content}</p>
+                    </button>
                     {/* Reply and View Replies buttons */}
                     <div className="flex gap-3 mt-2">
                       <button
@@ -193,15 +200,22 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
                           {reply.isAnonymous ? <Ghost size={10} className="text-muted-foreground" /> : (reply.userId?.name?.[0] || 'U')}
                         </div>
                         <div className="flex-1">
-                          <div className="flex items-baseline gap-2">
-                            <span className="text-xs font-bold">
-                              {reply.isAnonymous ? 'Ghost' : (reply.userId?.name || 'User')}
-                            </span>
-                            <span className="text-[9px] text-muted-foreground">
-                              {new Date(reply.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <p className="text-xs text-foreground mt-0.5">{reply.content}</p>
+                          <button
+                            type="button"
+                            onClick={() => !reply.isAnonymous && onViewProfile?.(reply.userId?._id)}
+                            disabled={reply.isAnonymous || !reply.userId?._id}
+                            className="text-left disabled:cursor-default"
+                          >
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs font-bold hover:text-primary transition-colors">
+                                {reply.isAnonymous ? 'Ghost' : (reply.userId?.name || 'User')}
+                              </span>
+                              <span className="text-[9px] text-muted-foreground">
+                                {new Date(reply.createdAt).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-xs text-foreground mt-0.5">{reply.content}</p>
+                          </button>
                         </div>
                       </div>
                     ))}

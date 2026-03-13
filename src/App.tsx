@@ -22,7 +22,7 @@ import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
-import socket from './services/socket';
+import { HashtagText } from './components/HashtagText';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -39,6 +39,8 @@ export default function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [viewingProfileUserId, setViewingProfileUserId] = useState<string | null>(null);
+  const [searchInitialQuery, setSearchInitialQuery] = useState('');
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -234,69 +236,39 @@ export default function App() {
     }
   };
 
-  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
-    try {
-      const nextSettings = {
-        ...notificationSettings,
-        [key]: !notificationSettings[key],
-      };
-
-      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          enabled: telegramNotificationsEnabled,
-          settings: nextSettings,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const normalizedSettings = normalizeNotificationSettings(data.notificationSettings);
-        setNotificationSettings(normalizedSettings);
-        const updatedUser = {
-          ...user,
-          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
-          notificationSettings: normalizedSettings,
-        };
-        setUser(updatedUser);
-        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
-      }
-    } catch (error) {
-      console.error('Failed to update detailed notification settings:', error);
-    }
+  const openProfile = (targetUserId?: string | null) => {
+    if (!targetUserId) return;
+    setViewingProfileUserId(targetUserId);
+    setActiveTab('profile');
+    setShowSearch(false);
   };
 
-  const notificationSettingLabels: Array<{
-    key: keyof NotificationSettings;
-    title: string;
-    description: string;
-  }> = [
-    { key: 'messages', title: 'Direct messages', description: 'Private chats and replies from other users' },
-    { key: 'comments', title: 'Comments', description: 'Replies and discussions on your posts' },
-    { key: 'likes', title: 'Likes', description: 'When someone likes your post or reel' },
-    { key: 'follows', title: 'Followers', description: 'New followers and follow-backs' },
-    { key: 'mentions', title: 'Mentions & tags', description: 'Mentions, tags, and direct callouts' },
-    { key: 'shares', title: 'Shares & story views', description: 'Post shares and story-view style activity' },
-  ];
-
-  const toggleGroupMembership = (groupId: string) => {
-    setJoinedGroups((current) => {
-      if (current.includes(groupId)) {
-        const nextGroups = current.filter((id) => id !== groupId);
-        if (selectedGroupId === groupId) {
-          setSelectedGroupId('all');
-        }
-        return nextGroups;
-      }
-
-      setSelectedGroupId(groupId);
-      setHomeSection('groups');
-      return [...current, groupId];
-    });
+  const openOwnProfile = () => {
+    if (!user?.id) return;
+    setViewingProfileUserId(user.id);
+    setActiveTab('profile');
   };
 
-  const visiblePosts = getVisibleCommunityPosts(posts, homeSection, selectedGroupId);
+  const startChatWithUser = (targetUser: any) => {
+    if (!targetUser) return;
+
+    const normalizedUser = {
+      id: targetUser.id || targetUser._id,
+      name: targetUser.name || 'User',
+      username: targetUser.username || '',
+      avatarUrl: targetUser.avatarUrl || '',
+    };
+
+    if (!normalizedUser.id || normalizedUser.id === user?.id) return;
+
+    setActiveChat(normalizedUser);
+    setShowSearch(false);
+  };
+
+  const openHashtagSearch = (hashtag: string) => {
+    setSearchInitialQuery(hashtag);
+    setShowSearch(true);
+  };
 
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
@@ -373,7 +345,7 @@ export default function App() {
             <Ghost size={20} />
           </button>
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={openOwnProfile}
             className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-bold text-accent overflow-hidden hover:border-accent/50 transition-all"
           >
             {user?.avatarUrl ? (
@@ -578,39 +550,20 @@ export default function App() {
               <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => !post.isAnonymous && openProfile(post.userId?._id)}
+                      disabled={post.isAnonymous || !post.userId?._id}
+                      className="flex items-center gap-3 text-left disabled:cursor-default"
+                    >
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                       {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
                     </div>
                     <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
-                        {contentType === 'announcement' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">
-                            <Megaphone size={10} />
-                            Announcement
-                          </span>
-                        )}
-                        {contentType === 'academic' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">
-                            <GraduationCap size={10} />
-                            Academics
-                          </span>
-                        )}
-                        {contentType === 'group' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600">
-                            <Users size={10} />
-                            {getGroupName(post.groupId)}
-                          </span>
-                        )}
-                        {contentType === 'event' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
-                            <CalendarDays size={10} />
-                            Event
-                          </span>
-                        )}
-                      </div>
+                      <p className="text-sm font-bold hover:text-primary transition-colors">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
+                    </button>
                   </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
@@ -624,28 +577,11 @@ export default function App() {
                   />
                 ) : null}
                 <div className="p-4 space-y-2">
-                  {post.title && (
-                    <p className="text-base font-bold text-foreground">{post.title}</p>
-                  )}
-                  {contentType === 'event' && (
-                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      {post.eventTime && (
-                        <span className="inline-flex items-center gap-1">
-                          <Clock3 size={12} />
-                          {new Date(post.eventTime).toLocaleString()}
-                        </span>
-                      )}
-                      {post.place && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin size={12} />
-                          {post.place}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {post.content}
-                  </p>
+                  <HashtagText
+                    text={post.content}
+                    className="text-sm text-foreground leading-relaxed whitespace-pre-wrap"
+                    onHashtagClick={openHashtagSearch}
+                  />
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -676,7 +612,7 @@ export default function App() {
         )}
 
         {activeTab === 'reels' && (
-          <ReelsTab user={user} />
+          <ReelsTab user={user} onViewProfile={openProfile} onHashtagClick={openHashtagSearch} />
         )}
 
         {activeTab === 'chat' && (
@@ -718,9 +654,11 @@ export default function App() {
 
         {activeTab === 'profile' && user && (
           <InstagramProfile
-            userId={user.id}
+            userId={viewingProfileUserId || user.id}
             currentUserId={user.id}
             onEditProfile={() => setShowEditProfile(true)}
+            onBack={viewingProfileUserId && viewingProfileUserId !== user.id ? openOwnProfile : undefined}
+            onMessageUser={startChatWithUser}
           />
         )}
 
@@ -924,6 +862,7 @@ export default function App() {
           userId={user.id}
           isAnonymous={false}
           onClose={() => setCommentPostId(null)}
+          onViewProfile={openProfile}
         />
       )}
 
@@ -937,7 +876,16 @@ export default function App() {
       )}
 
       {showSearch && (
-        <SearchPanel onClose={() => setShowSearch(false)} />
+        <SearchPanel
+          currentUserId={user?.id}
+          initialQuery={searchInitialQuery}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchInitialQuery('');
+          }}
+          onViewProfile={openProfile}
+          onStartChat={startChatWithUser}
+        />
       )}
 
       {activeStoryGroup && user && (
@@ -967,7 +915,7 @@ export default function App() {
             { icon: Home, label: 'Home', onClick: () => setActiveTab('home') },
             { icon: Film, label: 'Reels', onClick: () => setActiveTab('reels') },
             { icon: MessageSquare, label: 'Chat', onClick: () => setActiveTab('chat') },
-            { icon: User, label: 'Profile', onClick: () => setActiveTab('profile') },
+            { icon: User, label: 'Profile', onClick: openOwnProfile },
             { icon: Settings, label: 'Settings', onClick: () => setActiveTab('settings') },
           ]}
           className="fixed bottom-0 left-0 right-0 z-40"

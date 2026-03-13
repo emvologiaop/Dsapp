@@ -9,14 +9,22 @@ interface SearchResult {
 }
 
 interface SearchPanelProps {
+  currentUserId?: string;
+  initialQuery?: string;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
+  onStartChat?: (user: any) => void;
 }
 
-export function SearchPanel({ onClose }: SearchPanelProps) {
-  const [query, setQuery] = useState('');
+export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewProfile, onStartChat }: SearchPanelProps) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult>({ users: [], posts: [], reels: [] });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'users' | 'posts' | 'reels'>('all');
+
+  useEffect(() => {
+    setQuery(initialQuery);
+  }, [initialQuery]);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -78,7 +86,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search users, posts, or reels..."
+            placeholder="Search users, posts, reels, or #hashtags..."
             className="w-full pl-10 pr-4 py-3 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             autoFocus
           />
@@ -107,110 +115,131 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
           ))}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Results */}
-          {loading && (
-            <div className="text-center py-8 text-muted-foreground">Searching...</div>
-          )}
+        {/* Results */}
+        {loading && (
+          <div className="text-center py-8 text-muted-foreground">Searching...</div>
+        )}
 
-          {!loading && query.trim().length < 2 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <Search size={48} className="mx-auto mb-2 opacity-50" />
-              <p>Start typing to search</p>
-            </div>
-          )}
+        {!loading && query.trim().length < 2 && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Search size={48} className="mx-auto mb-2 opacity-50" />
+            <p>Start typing to search</p>
+          </div>
+        )}
 
-          {!loading && query.trim().length >= 2 && totalResults === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              <Search size={48} className="mx-auto mb-2 opacity-50" />
-              <p>No results found for "{query}"</p>
-            </div>
-          )}
+        {!loading && query.trim().length >= 2 && totalResults === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            <Search size={48} className="mx-auto mb-2 opacity-50" />
+            <p>No results found for "{query}"</p>
+          </div>
+        )}
 
-          {!loading && totalResults > 0 && (
-            <div className="space-y-6">
-              {/* Users */}
-              {(activeTab === 'all' || activeTab === 'users') && filteredResults.users.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
-                    Users ({filteredResults.users.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {filteredResults.users.map((user: any) => (
-                      <div
-                        key={user._id}
-                        className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center font-bold text-accent">
-                            {user.avatarUrl ? (
-                              <img src={user.avatarUrl} alt={user.name} className="w-full h-full rounded-full object-cover" />
-                            ) : (
-                              user.name?.[0] || 'U'
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">@{user.username}</p>
-                            {user.bio && <p className="text-xs text-muted-foreground line-clamp-1">{user.bio}</p>}
-                          </div>
+        {!loading && totalResults > 0 && (
+          <div className="space-y-6">
+            {/* Users */}
+            {(activeTab === 'all' || activeTab === 'users') && filteredResults.users.length > 0 && (
+              <div>
+                <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
+                  Users ({filteredResults.users.length})
+                </h3>
+                <div className="space-y-2">
+                  {filteredResults.users.map((user: any) => (
+                    <div
+                      key={user._id}
+                      className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3 justify-between">
+                        <button
+                          type="button"
+                          onClick={() => onViewProfile?.(user._id)}
+                          className="flex items-center gap-3 text-left flex-1 min-w-0"
+                        >
+                        <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center font-bold text-accent">
+                          {user.avatarUrl ? (
+                            <img src={user.avatarUrl} alt={user.name} className="w-full h-full rounded-full object-cover" />
+                          ) : (
+                            user.name?.[0] || 'U'
+                          )}
                         </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm">{user.name}</p>
+                          <p className="text-xs text-muted-foreground">@{user.username}</p>
+                          {user.bio && <p className="text-xs text-muted-foreground line-clamp-1">{user.bio}</p>}
+                        </div>
+                        </button>
+                        {user._id !== currentUserId && (
+                          <button
+                            type="button"
+                            onClick={() => onStartChat?.(user)}
+                            className="px-3 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded-lg shrink-0"
+                          >
+                            Message
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Posts */}
-              {(activeTab === 'all' || activeTab === 'posts') && filteredResults.posts.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
-                    Posts ({filteredResults.posts.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {filteredResults.posts.map((post: any) => (
-                      <div
-                        key={post._id}
-                        className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
+            {/* Posts */}
+            {(activeTab === 'all' || activeTab === 'posts') && filteredResults.posts.length > 0 && (
+              <div>
+                <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
+                  Posts ({filteredResults.posts.length})
+                </h3>
+                <div className="space-y-2">
+                  {filteredResults.posts.map((post: any) => (
+                    <div
+                      key={post._id}
+                      className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(post.userId?._id)}
+                        className="flex items-center gap-2 mb-2 text-left"
                       >
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="font-bold text-sm">{post.userId?.name || 'Unknown'}</p>
-                          <span className="text-xs text-muted-foreground">@{post.userId?.username}</span>
-                        </div>
-                        <p className="text-sm line-clamp-3">{post.content}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(post.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                        <p className="font-bold text-sm hover:text-primary transition-colors">{post.userId?.name || 'Unknown'}</p>
+                        <span className="text-xs text-muted-foreground">@{post.userId?.username}</span>
+                      </button>
+                      <p className="text-sm line-clamp-3">{post.content}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(post.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Reels */}
-              {(activeTab === 'all' || activeTab === 'reels') && filteredResults.reels.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
-                    Reels ({filteredResults.reels.length})
-                  </h3>
-                  <div className="space-y-2">
-                    {filteredResults.reels.map((reel: any) => (
-                      <div
-                        key={reel._id}
-                        className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
+            {/* Reels */}
+            {(activeTab === 'all' || activeTab === 'reels') && filteredResults.reels.length > 0 && (
+              <div>
+                <h3 className="text-sm font-bold text-muted-foreground mb-2 uppercase tracking-wider">
+                  Reels ({filteredResults.reels.length})
+                </h3>
+                <div className="space-y-2">
+                  {filteredResults.reels.map((reel: any) => (
+                    <div
+                      key={reel._id}
+                      className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(reel.userId?._id)}
+                        className="flex items-center gap-2 mb-2 text-left"
                       >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Film size={16} className="text-primary" />
-                          <p className="font-bold text-sm">{reel.userId?.name || 'Unknown'}</p>
-                          <span className="text-xs text-muted-foreground">@{reel.userId?.username}</span>
-                        </div>
-                        <p className="text-sm line-clamp-2">{reel.caption || 'No caption'}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(reel.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                        <Film size={16} className="text-primary" />
+                        <p className="font-bold text-sm hover:text-primary transition-colors">{reel.userId?.name || 'Unknown'}</p>
+                        <span className="text-xs text-muted-foreground">@{reel.userId?.username}</span>
+                      </button>
+                      <p className="text-sm line-clamp-2">{reel.caption || 'No caption'}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(reel.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

@@ -131,6 +131,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
   };
 
   const handlePost = async () => {
+    if (!content.trim() && selectedImages.length === 0) return;
     const validationError = validateComposeInput({
       content,
       contentType,
@@ -182,9 +183,8 @@ export const CreatePost: React.FC<CreatePostProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          title: title.trim() || undefined,
-          content,
-          isAnonymous: contentType === 'feed' ? isAnonymous : false,
+          content: content.trim(),
+          isAnonymous,
           mediaUrls,
           taggedUsers: taggedUsers.map(u => u._id),
           contentType,
@@ -321,7 +321,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
             <MentionInput
               value={content}
               onChange={setContent}
-            placeholder={contentPlaceholder}
+              placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "Write a caption or upload photos..."}
             textareaClassName="border-0 focus:ring-0 p-0"
             rows={3}
             disabled={isPosting}
@@ -413,7 +413,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
         </div>
         <button
           onClick={handlePost}
-          disabled={isPosting || !content.trim() || (contentType === 'group' && !groupId)}
+          disabled={isPosting || (!content.trim() && imagePreviews.length === 0)}
           className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
         >
           {isPosting && <Loader2 size={16} className="animate-spin" />}

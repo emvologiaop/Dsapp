@@ -16,6 +16,7 @@ export interface IPost extends Document {
   bookmarkedBy: mongoose.Types.ObjectId[];
   taggedUsers: mongoose.Types.ObjectId[]; // Users tagged in this post
   mentions: string[]; // Array of mentioned usernames (for efficient searching)
+  hashtags: string[];
   sharesCount: number;
   commentsCount: number;
   isDeleted: boolean;
@@ -50,6 +51,7 @@ const PostSchema = new Schema<IPost>(
     bookmarkedBy: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     taggedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }], // Tagged users
     mentions: [{ type: String }], // Mentioned usernames for search optimization
+    hashtags: [{ type: String }],
     sharesCount: { type: Number, default: 0 },
     commentsCount: { type: Number, default: 0 },
     isDeleted: { type: Boolean, default: false },
@@ -67,7 +69,6 @@ PostSchema.index({ likedBy: 1 }); // For finding posts liked by a user
 PostSchema.index({ bookmarkedBy: 1 }); // For finding bookmarked posts
 PostSchema.index({ taggedUsers: 1, createdAt: -1 }); // For finding posts where user is tagged
 PostSchema.index({ mentions: 1 }); // For searching posts by mentions
-PostSchema.index({ contentType: 1, approvalStatus: 1, createdAt: -1 });
-PostSchema.index({ groupId: 1, createdAt: -1 });
+PostSchema.index({ hashtags: 1 }); // For hashtag discovery
 
 export const Post = mongoose.model<IPost>('Post', PostSchema);
