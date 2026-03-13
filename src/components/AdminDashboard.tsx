@@ -32,11 +32,17 @@ interface User {
 interface Post {
   _id: string;
   content: string;
+  title?: string;
   userId: { name: string; username: string };
   isDeleted: boolean;
   createdAt: string;
   mediaUrls?: string[];
   likesCount?: number;
+  contentType?: 'feed' | 'group' | 'event' | 'academic' | 'announcement';
+  groupId?: string;
+  place?: string;
+  eventTime?: string;
+  approvalStatus?: 'approved' | 'pending' | 'rejected';
 }
 
 interface Reel {
@@ -242,6 +248,25 @@ export function AdminDashboard({ userId, onClose }: Props) {
     } catch (error) {
       console.error('Failed to delete post:', error);
       alert('Failed to delete post');
+    }
+  };
+
+  const handleModeratePost = async (postId: string, approvalStatus: 'approved' | 'rejected') => {
+    try {
+      const response = await fetch(`/api/admin/posts/${postId}/approval`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, approvalStatus }),
+      });
+
+      if (response.ok) {
+        fetchPosts();
+      } else {
+        alert(`Failed to ${approvalStatus === 'approved' ? 'approve' : 'reject'} request`);
+      }
+    } catch (error) {
+      console.error('Failed to moderate post:', error);
+      alert('Failed to moderate post');
     }
   };
 
@@ -644,25 +669,67 @@ export function AdminDashboard({ userId, onClose }: Props) {
                         <div className="flex items-center gap-2 mb-2">
                           <p className="font-bold">{post.userId?.name || 'Unknown'}</p>
                           <span className="text-xs text-muted-foreground">@{post.userId?.username}</span>
+                          {post.contentType && post.contentType !== 'feed' && (
+                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full font-medium capitalize">
+                              {post.contentType}
+                            </span>
+                          )}
+                          {post.approvalStatus && post.approvalStatus !== 'approved' && (
+                            <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                              post.approvalStatus === 'pending'
+                                ? 'bg-amber-500/20 text-amber-600'
+                                : 'bg-red-500/20 text-red-500'
+                            }`}>
+                              {post.approvalStatus}
+                            </span>
+                          )}
                           {post.isDeleted && (
                             <span className="px-2 py-0.5 bg-red-500/20 text-red-500 text-xs rounded-full font-medium">
                               Deleted
                             </span>
                           )}
                         </div>
+                        {post.title && (
+                          <p className="text-sm font-semibold text-foreground mb-1">{post.title}</p>
+                        )}
                         <p className="text-sm text-foreground mb-2">{post.content}</p>
+                        {(post.place || post.eventTime || post.groupId) && (
+                          <div className="flex flex-wrap gap-3 mb-2 text-xs text-muted-foreground">
+                            {post.groupId && <span>Group: {post.groupId}</span>}
+                            {post.place && <span>Place: {post.place}</span>}
+                            {post.eventTime && <span>Time: {new Date(post.eventTime).toLocaleString()}</span>}
+                          </div>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           {new Date(post.createdAt).toLocaleString()}
                         </p>
                       </div>
-                      {!post.isDeleted && (
-                        <button
-                          onClick={() => handleDeletePost(post._id)}
-                          className="p-2 h-fit bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      )}
+                      <div className="flex flex-col items-end gap-2">
+                        {post.approvalStatus === 'pending' && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleModeratePost(post._id, 'approved')}
+                              className="px-3 py-2 h-fit bg-green-500/20 text-green-600 rounded-lg hover:bg-green-500/30 transition-colors text-sm font-medium"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => handleModeratePost(post._id, 'rejected')}
+                              className="px-3 py-2 h-fit bg-amber-500/20 text-amber-600 rounded-lg hover:bg-amber-500/30 transition-colors text-sm font-medium"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                        {!post.isDeleted && (
+                          <button
+                            onClick={() => handleDeletePost(post._id)}
+                            className="p-2 h-fit bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </FriendlyCard>
                 ))}

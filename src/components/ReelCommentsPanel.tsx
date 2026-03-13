@@ -55,12 +55,15 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
         body: JSON.stringify({
           userId,
           text: newComment,
-          isAnonymous,
+          isAnonymous: false,
         }),
       });
       if (response.ok) {
         setNewComment('');
         fetchComments();
+      } else {
+        const data = await response.json().catch(() => null);
+        alert(data?.error || 'Failed to post comment.');
       }
     } catch (error) {
       console.error('Error posting comment:', error);
@@ -83,7 +86,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="w-full bg-background rounded-t-3xl shadow-xl max-h-[80vh] flex flex-col"
+          className="fixed inset-0 w-full bg-background shadow-xl flex flex-col md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[80vh] md:rounded-t-3xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -92,6 +95,9 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
             <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
               <X size={20} />
             </button>
+          </div>
+          <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+            Comments always use your real profile.
           </div>
 
           {/* Comments List */}
@@ -139,7 +145,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder={isAnonymous ? 'Comment as Ghost...' : 'Add a comment...'}
+                placeholder="Add a comment..."
                 className="flex-1 bg-muted border border-border rounded-full px-4 py-2 text-sm outline-none focus:border-primary"
                 disabled={isLoading}
               />

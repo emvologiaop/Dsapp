@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Moon, Sun } from 'lucide-react'
+import { cn } from '../../lib/utils'
 
 interface ThemeSwitchProps {
   className?: string
@@ -31,7 +32,11 @@ export function ThemeSwitch({ className = '' }: ThemeSwitchProps) {
   return (
     <button
       onClick={toggleTheme}
-      className={`relative flex h-8 w-8 items-center justify-center rounded-full text-[var(--text-color-primary)] hover:opacity-80 transition-opacity overflow-hidden ${className}`}
+      aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      className={cn(
+        'relative flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-muted overflow-hidden',
+        className
+      )}
     >
       <Sun
         className={`absolute h-5 w-5 transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${

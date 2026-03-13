@@ -67,8 +67,8 @@ export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewP
   const totalResults = filteredResults.users.length + filteredResults.posts.length + filteredResults.reels.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-20 overflow-y-auto">
-      <FriendlyCard className="max-w-2xl w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-background flex flex-col md:bg-black/50 md:items-center md:justify-center md:p-6">
+      <FriendlyCard className="flex h-full min-h-0 w-full flex-1 flex-col rounded-none border-0 p-4 shadow-none md:h-auto md:max-h-[80vh] md:max-w-2xl md:rounded-3xl md:border md:p-6 md:shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Search</h2>
           <button
@@ -177,8 +177,8 @@ export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewP
                           </button>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -241,10 +241,10 @@ export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewP
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </FriendlyCard>
     </div>
   );
