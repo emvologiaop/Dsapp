@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getTelegramDeepLink,
   getTelegramHandle,
   getTelegramProfileUrl,
   normalizeTelegramUsername,
@@ -17,6 +18,11 @@ describe('telegram utilities', () => {
   it('builds a handle and profile URL from the configured username', () => {
     expect(getTelegramHandle('@MyBot')).toBe('@MyBot');
     expect(getTelegramProfileUrl('@MyBot')).toBe('https://t.me/MyBot');
+  });
+
+  it('builds a deep link with a start payload', () => {
+    expect(getTelegramDeepLink('123456', '@MyBot')).toBe('https://t.me/MyBot?start=123456');
+    expect(getTelegramDeepLink('123456')).toBe('https://t.me/DDU_social_BOT?start=123456');
   });
 
   it('prefers explicit webhook URL and otherwise derives one from APP_URL', () => {

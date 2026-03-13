@@ -124,12 +124,48 @@ export function initBot(io?: any) {
   // directly — avoiding the broken bot.emit('message', fakeMsg) pattern,
   // which never triggers onText callbacks.
 
-  async function handleStart(chatId: number) {
+  async function handleStart(chatId: number, payload?: string) {
+    // If a 6-digit verification code was passed as the deep-link start payload,
+    // auto-link the account immediately instead of asking the user to send the
+    // code manually.
+    if (payload && /^\d{6}$/.test(payload)) {
+      try {
+        const linked = await User.findOneAndUpdate(
+          { telegramAuthCode: payload },
+          { telegramChatId: chatId.toString() },
+          { new: true }
+        );
+        if (linked) {
+          await bot.sendMessage(
+            chatId,
+            `✅ *Account linked successfully!*\n\n` +
+            `Welcome, ${linked.name}! 🎉\n\n` +
+            `Your Telegram account is now connected to DDU Social.\n\n` +
+            `You'll receive instant notifications for:\n` +
+            `• New messages 💬\n` +
+            `• Likes and comments ❤️\n` +
+            `• New followers 👥\n` +
+            `• Trending posts 🔥\n\n` +
+            `Use /menu to explore all features!`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: getMainMenuKeyboard()
+            }
+          );
+          return;
+        }
+        // Code not found — fall through to normal /start response so the user
+        // still receives helpful instructions.
+      } catch (error) {
+        console.error('Error during /start deep-link verification:', error);
+      }
+    }
+
     try {
       const user = await getUserFromTelegram(chatId);
 
       if (user) {
-        bot.sendMessage(
+        await bot.sendMessage(
           chatId,
           `🎉 Welcome back, *${user.name}*!\n\n` +
           "Ready to dive into DDU Social? Pick an option below:",
@@ -139,7 +175,7 @@ export function initBot(io?: any) {
           }
         );
       } else {
-        bot.sendMessage(
+        await bot.sendMessage(
           chatId,
           "🚀 *Welcome to DDU Social Bot!*\n\n" +
           "Your campus social hub is now in your pocket. To get started:\n\n" +
@@ -620,7 +656,7 @@ export function initBot(io?: any) {
 
   // ── Command registrations ────────────────────────────────────────────────────
 
-  bot.onText(/\/start/, (msg) => handleStart(msg.chat.id));
+  bot.onText(/^\/start(?:\s+(\S+))?/, (msg, match) => handleStart(msg.chat.id, match?.[1]?.trim()));
   bot.onText(/\/help/, (msg) => handleHelp(msg.chat.id));
   bot.onText(/\/menu/, (msg) => handleMenu(msg.chat.id));
   bot.onText(/\/stats/, (msg) => handleStats(msg.chat.id));

@@ -31,7 +31,7 @@ import { NotificationSettings, DEFAULT_NOTIFICATION_SETTINGS, normalizeNotificat
 import { CommunitySection, COMMUNITY_GROUPS, getGroupName, normalizeContentType, getVisibleCommunityPosts } from './utils/community';
 import { sortStoryGroups, StoryGroup } from './utils/stories';
 import { GHOST_MODE_MIN_ACCOUNT_AGE_DAYS, canUseGhostMode } from './utils/ghostPolicy';
-import { getTelegramHandle, getTelegramProfileUrl } from './utils/telegram';
+import { getTelegramHandle, getTelegramProfileUrl, getTelegramDeepLink } from './utils/telegram';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -1010,12 +1010,12 @@ export default function App() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <a
-                        href={botUrl}
+                        href={telegramAuthCode ? getTelegramDeepLink(telegramAuthCode, import.meta.env.VITE_TELEGRAM_BOT_USERNAME) : botUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-colors"
                       >
-                        Open bot
+                        Open bot &amp; verify
                         <ExternalLink size={14} />
                       </a>
                       <button
