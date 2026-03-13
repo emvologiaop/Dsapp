@@ -118,14 +118,17 @@ export function initBot(io?: any) {
     }
   })();
 
-  bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
+  // ── Command handler functions ────────────────────────────────────────────────
+  // Each command's logic lives in a named async function so that both
+  // bot.onText() handlers and the callback_query handler can call them
+  // directly — avoiding the broken bot.emit('message', fakeMsg) pattern,
+  // which never triggers onText callbacks.
 
+  async function handleStart(chatId: number) {
     try {
       const user = await getUserFromTelegram(chatId);
 
       if (user) {
-        // User is linked, show main menu
         bot.sendMessage(
           chatId,
           `🎉 Welcome back, *${user.name}*!\n\n` +
@@ -136,7 +139,6 @@ export function initBot(io?: any) {
           }
         );
       } else {
-        // User not linked, show linking instructions
         bot.sendMessage(
           chatId,
           "🚀 *Welcome to DDU Social Bot!*\n\n" +
@@ -156,11 +158,9 @@ export function initBot(io?: any) {
         "⚠️ Sorry, something went wrong. Please try again later or contact /support"
       );
     }
-  });
+  }
 
-  // Help command
-  bot.onText(/\/help/, (msg) => {
-    const chatId = msg.chat.id;
+  function handleHelp(chatId: number) {
     bot.sendMessage(
       chatId,
       "📱 *DDU Social Bot - Commands*\n\n" +
@@ -182,11 +182,9 @@ export function initBot(io?: any) {
       "💡 Tip: Use /support to report bugs or share feature ideas directly with the dev team!",
       { parse_mode: 'Markdown' }
     );
-  });
+  }
 
-  // Menu command - show main menu
-  bot.onText(/\/menu/, async (msg) => {
-    const chatId = msg.chat.id;
+  async function handleMenu(chatId: number) {
     const user = await getUserFromTelegram(chatId);
 
     if (!user) {
@@ -205,12 +203,9 @@ export function initBot(io?: any) {
         reply_markup: getMainMenuKeyboard()
       }
     );
-  });
+  }
 
-  // Stats command
-  bot.onText(/\/stats/, async (msg) => {
-    const chatId = msg.chat.id;
-
+  async function handleStats(chatId: number) {
     try {
       const user = await getUserFromTelegram(chatId);
       if (!user) {
@@ -221,7 +216,6 @@ export function initBot(io?: any) {
         return;
       }
 
-      // Get user's posts and stats
       const posts = await Post.find({ userId: user._id, isDeleted: false });
       const totalLikes = posts.reduce((sum, post) => sum + post.likedBy.length, 0);
       const totalComments = posts.reduce((sum, post) => sum + post.commentsCount, 0);
@@ -256,17 +250,11 @@ export function initBot(io?: any) {
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Failed to load your stats. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Failed to load your stats. Please try again later.");
     }
-  });
+  }
 
-  // Notifications command
-  bot.onText(/\/notifications/, async (msg) => {
-    const chatId = msg.chat.id;
-
+  async function handleNotifications(chatId: number) {
     try {
       const user = await getUserFromTelegram(chatId);
       if (!user) {
@@ -294,7 +282,7 @@ export function initBot(io?: any) {
       const unreadCount = notifications.filter(n => !n.isRead).length;
       let notifText = `🔔 *Your Notifications* (${unreadCount} unread)\n\n`;
 
-      notifications.slice(0, 8).forEach((notif, idx) => {
+      notifications.slice(0, 8).forEach((notif) => {
         const icon = notif.isRead ? '○' : '●';
         const typeEmoji = {
           'like': '❤️',
@@ -323,17 +311,11 @@ export function initBot(io?: any) {
       });
     } catch (error) {
       console.error('Error fetching notifications:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Failed to load notifications. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Failed to load notifications. Please try again later.");
     }
-  });
+  }
 
-  // Unread messages command
-  bot.onText(/\/unread/, async (msg) => {
-    const chatId = msg.chat.id;
-
+  async function handleUnread(chatId: number) {
     try {
       const user = await getUserFromTelegram(chatId);
       if (!user) {
@@ -388,18 +370,11 @@ export function initBot(io?: any) {
       });
     } catch (error) {
       console.error('Error fetching unread messages:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Failed to load messages. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Failed to load messages. Please try again later.");
     }
-  });
+  }
 
-  // Profile command
-  bot.onText(/\/profile(?:\s+@?(\w+))?/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const requestedUsername = match?.[1];
-
+  async function handleProfile(chatId: number, requestedUsername?: string) {
     try {
       const currentUser = await getUserFromTelegram(chatId);
       if (!currentUser) {
@@ -410,16 +385,12 @@ export function initBot(io?: any) {
         return;
       }
 
-      // If no username provided, show own profile
       const targetUser = requestedUsername
         ? await User.findOne({ username: requestedUsername })
         : currentUser;
 
       if (!targetUser) {
-        bot.sendMessage(
-          chatId,
-          "❌ User not found. Please check the username and try again."
-        );
+        bot.sendMessage(chatId, "❌ User not found. Please check the username and try again.");
         return;
       }
 
@@ -465,17 +436,11 @@ export function initBot(io?: any) {
       });
     } catch (error) {
       console.error('Error fetching profile:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Failed to load profile. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Failed to load profile. Please try again later.");
     }
-  });
+  }
 
-  // Trending command
-  bot.onText(/\/trending/, async (msg) => {
-    const chatId = msg.chat.id;
-
+  async function handleTrending(chatId: number) {
     try {
       const user = await getUserFromTelegram(chatId);
       if (!user) {
@@ -486,7 +451,6 @@ export function initBot(io?: any) {
         return;
       }
 
-      // Get posts from last 7 days, sorted by engagement
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const trendingPosts = await Post.find({
         isDeleted: false,
@@ -510,7 +474,6 @@ export function initBot(io?: any) {
 
       trendingPosts.forEach((post: any, idx) => {
         const author = post.userId;
-        const engagement = post.likedBy.length + post.commentsCount + post.sharesCount;
         const contentPreview = post.content.length > 80
           ? post.content.substring(0, 80) + '...'
           : post.content;
@@ -534,16 +497,11 @@ export function initBot(io?: any) {
       });
     } catch (error) {
       console.error('Error fetching trending posts:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Failed to load trending posts. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Failed to load trending posts. Please try again later.");
     }
-  });
+  }
 
-  // Contact developer command
-  bot.onText(/\/contact/, (msg) => {
-    const chatId = msg.chat.id;
+  function handleContact(chatId: number) {
     bot.sendMessage(
       chatId,
       "👨‍💻 *Contact the Developer*\n\n" +
@@ -560,11 +518,9 @@ export function initBot(io?: any) {
         }
       }
     );
-  });
+  }
 
-  // Support command - Report bugs or add suggestions
-  bot.onText(/\/support/, (msg) => {
-    const chatId = msg.chat.id;
+  function handleSupport(chatId: number) {
     bot.sendMessage(
       chatId,
       "🆘 *Technical Support*\n\n" +
@@ -579,25 +535,16 @@ export function initBot(io?: any) {
         parse_mode: 'Markdown',
         reply_markup: {
           inline_keyboard: [
-            [
-              { text: '🐛 Report Bug', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
-            ],
-            [
-              { text: '💡 Suggest Feature', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
-            ],
-            [
-              { text: '💬 General Support', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }
-            ]
+            [{ text: '🐛 Report Bug', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }],
+            [{ text: '💡 Suggest Feature', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }],
+            [{ text: '💬 General Support', url: `https://t.me/${ADMIN_TELEGRAM_USERNAME.replace('@', '')}` }]
           ]
         }
       }
     );
-  });
+  }
 
-  // Ads command - View active advertisements
-  bot.onText(/\/ads/, async (msg) => {
-    const chatId = msg.chat.id;
-
+  async function handleAds(chatId: number) {
     try {
       const now = new Date();
       const activeAds = await Ad.find({
@@ -617,9 +564,9 @@ export function initBot(io?: any) {
           }
         ]
       })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .populate('createdBy', 'name');
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate('createdBy', 'name');
 
       if (activeAds.length === 0) {
         bot.sendMessage(
@@ -630,7 +577,6 @@ export function initBot(io?: any) {
         return;
       }
 
-      // Send a header message
       bot.sendMessage(
         chatId,
         `📢 *Active Advertisements* (${activeAds.length})\n\n` +
@@ -638,14 +584,11 @@ export function initBot(io?: any) {
         { parse_mode: 'Markdown' }
       );
 
-      // Send each ad as a separate message
       for (const ad of activeAds) {
-        // Increment impressions
         ad.impressions += 1;
         await ad.save();
 
-        let message = `*${ad.title}*\n\n${ad.content}`;
-
+        const message = `*${ad.title}*\n\n${ad.content}`;
         const keyboard: any = { inline_keyboard: [] };
 
         if (ad.linkUrl) {
@@ -655,31 +598,41 @@ export function initBot(io?: any) {
         }
 
         if (ad.imageUrl) {
-          // Send photo with caption
           await bot.sendPhoto(chatId, ad.imageUrl, {
             caption: message,
             parse_mode: 'Markdown',
             reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined
           });
         } else {
-          // Send text message
           await bot.sendMessage(chatId, message, {
             parse_mode: 'Markdown',
             reply_markup: keyboard.inline_keyboard.length > 0 ? keyboard : undefined
           });
         }
 
-        // Small delay between ads to avoid flooding
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error) {
       console.error('Error fetching ads:', error);
-      bot.sendMessage(
-        chatId,
-        "⚠️ Sorry, there was an error fetching advertisements. Please try again later."
-      );
+      bot.sendMessage(chatId, "⚠️ Sorry, there was an error fetching advertisements. Please try again later.");
     }
-  });
+  }
+
+  // ── Command registrations ────────────────────────────────────────────────────
+
+  bot.onText(/\/start/, (msg) => handleStart(msg.chat.id));
+  bot.onText(/\/help/, (msg) => handleHelp(msg.chat.id));
+  bot.onText(/\/menu/, (msg) => handleMenu(msg.chat.id));
+  bot.onText(/\/stats/, (msg) => handleStats(msg.chat.id));
+  bot.onText(/\/notifications/, (msg) => handleNotifications(msg.chat.id));
+  bot.onText(/\/unread/, (msg) => handleUnread(msg.chat.id));
+  bot.onText(/\/profile(?:\s+@?(\w+))?/, (msg, match) => handleProfile(msg.chat.id, match?.[1]));
+  bot.onText(/\/trending/, (msg) => handleTrending(msg.chat.id));
+  bot.onText(/\/contact/, (msg) => handleContact(msg.chat.id));
+  bot.onText(/\/support/, (msg) => handleSupport(msg.chat.id));
+  bot.onText(/\/ads/, (msg) => handleAds(msg.chat.id));
+
+  // ── Callback query handler ───────────────────────────────────────────────────
 
   // Handle callback queries for ad clicks and menu navigation
   bot.on('callback_query', async (query) => {
@@ -706,7 +659,7 @@ export function initBot(io?: any) {
 
       // Handle menu navigation
       const user = await getUserFromTelegram(chatId);
-      if (!user && !data.startsWith('menu_help')) {
+      if (!user && data !== 'menu_help') {
         bot.answerCallbackQuery(query.id, {
           text: '⚠️ Please link your account first',
           show_alert: true
@@ -729,49 +682,38 @@ export function initBot(io?: any) {
           break;
 
         case 'menu_stats':
-          // Trigger stats command
           bot.answerCallbackQuery(query.id, { text: '📊 Loading stats...' });
-          if (query.message) {
-            bot.onText(/\/stats/, async (msg) => { }); // Trigger will be handled by command
-            const fakeMsg: any = { chat: { id: chatId }, text: '/stats' };
-            bot.emit('message', fakeMsg);
-          }
+          await handleStats(chatId);
           break;
 
         case 'menu_notifications':
           bot.answerCallbackQuery(query.id, { text: '🔔 Loading notifications...' });
-          const fakeNotifMsg: any = { chat: { id: chatId }, text: '/notifications' };
-          bot.emit('message', fakeNotifMsg);
+          await handleNotifications(chatId);
           break;
 
         case 'menu_messages':
           bot.answerCallbackQuery(query.id, { text: '💬 Loading messages...' });
-          const fakeMsgMsg: any = { chat: { id: chatId }, text: '/unread' };
-          bot.emit('message', fakeMsgMsg);
+          await handleUnread(chatId);
           break;
 
         case 'menu_trending':
           bot.answerCallbackQuery(query.id, { text: '🔥 Loading trending...' });
-          const fakeTrendMsg: any = { chat: { id: chatId }, text: '/trending' };
-          bot.emit('message', fakeTrendMsg);
+          await handleTrending(chatId);
           break;
 
         case 'menu_ads':
           bot.answerCallbackQuery(query.id, { text: '📢 Loading ads...' });
-          const fakeAdsMsg: any = { chat: { id: chatId }, text: '/ads' };
-          bot.emit('message', fakeAdsMsg);
+          await handleAds(chatId);
           break;
 
         case 'menu_profile':
           bot.answerCallbackQuery(query.id, { text: '👤 Loading profile...' });
-          const fakeProfileMsg: any = { chat: { id: chatId }, text: '/profile' };
-          bot.emit('message', fakeProfileMsg);
+          await handleProfile(chatId);
           break;
 
         case 'menu_help':
           bot.answerCallbackQuery(query.id, { text: '❓ Loading help...' });
-          const fakeHelpMsg: any = { chat: { id: chatId }, text: '/help' };
-          bot.emit('message', fakeHelpMsg);
+          handleHelp(chatId);
           break;
 
         case 'notif_mark_read':
@@ -784,22 +726,18 @@ export function initBot(io?: any) {
               text: '✓ All notifications marked as read',
               show_alert: true
             });
-            // Refresh the notifications view
-            const fakeRefreshMsg: any = { chat: { id: chatId }, text: '/notifications' };
-            bot.emit('message', fakeRefreshMsg);
+            await handleNotifications(chatId);
           }
           break;
 
         default:
           if (data.startsWith('profile_follow_')) {
-            // Handle follow/unfollow
             const targetUserId = data.replace('profile_follow_', '');
             if (user) {
               const targetUser = await User.findById(targetUserId);
               if (targetUser) {
                 const isFollowing = user.followingIds?.some(id => id.toString() === targetUserId);
                 if (isFollowing) {
-                  // Unfollow
                   user.followingIds = user.followingIds?.filter(id => id.toString() !== targetUserId) || [];
                   targetUser.followerIds = targetUser.followerIds?.filter(id => id.toString() !== user._id.toString()) || [];
                   bot.answerCallbackQuery(query.id, {
@@ -807,7 +745,6 @@ export function initBot(io?: any) {
                     show_alert: false
                   });
                 } else {
-                  // Follow
                   user.followingIds = [...(user.followingIds || []), targetUser._id];
                   targetUser.followerIds = [...(targetUser.followerIds || []), user._id];
                   bot.answerCallbackQuery(query.id, {
@@ -817,9 +754,7 @@ export function initBot(io?: any) {
                 }
                 await user.save();
                 await targetUser.save();
-                // Refresh profile
-                const fakeProfileRefresh: any = { chat: { id: chatId }, text: `/profile ${targetUser.username}` };
-                bot.emit('message', fakeProfileRefresh);
+                await handleProfile(chatId, targetUser.username);
               }
             }
           } else {
@@ -835,11 +770,13 @@ export function initBot(io?: any) {
     }
   });
 
+  // ── Free-text message handler ────────────────────────────────────────────────
+
   bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    // Skip if it's a command (starts with /)
+    // Skip command messages — they are handled by onText() above
     if (text?.startsWith('/')) return;
 
     // Check for 6-digit verification code
