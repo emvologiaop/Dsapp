@@ -403,7 +403,7 @@ app.get('/api/auth/check-username', async (req, res) => {
   }
 });
 
-app.post('/api/auth/signup', uploadImage, async (req, res) => {
+app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
   try {
     const { name, username, email, password, age, gender, department } = req.body;
     if (!name || !username || !email || !password) {
@@ -1184,7 +1184,7 @@ app.put('/api/users/:userId/profile', async (req, res) => {
 });
 
 // Avatar upload endpoint
-app.put('/api/users/:userId/avatar', uploadImage, async (req, res) => {
+app.put('/api/users/:userId/avatar', uploadImage.single('avatar'), async (req, res) => {
   try {
     const { userId } = req.params;
     if (!req.file) {
