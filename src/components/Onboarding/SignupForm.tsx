@@ -213,24 +213,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                 icon={<GraduationCap className="w-5 h-5" />}
               />
             </div>
-              <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
-                <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                <div className="text-xs text-muted-foreground space-y-2">
-                  <p>By completing this, you agree to the DDU Social Terms and community guidelines.</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowTerms(true)}
-                    className="text-primary font-semibold hover:underline"
-                  >
-                    Read the Terms of Service
-                  </button>
-                  <ul className="space-y-1 list-disc pl-4">
-                    <li>Ghost posts stay anonymous to other users, but moderators can review them if reported.</li>
-                    <li>Ghost mode unlocks after 7 days.</li>
-                    <li>Comments are never anonymous.</li>
-                  </ul>
-                </div>
-              </div>
+            <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
+              <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                By completing this, you agree to the DDU Social community guidelines, privacy policy, and the required Telegram verification step for secure authentication.
+              </p>
+            </div>
           </motion.div>
         );
       default:
@@ -242,7 +230,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
     <div className="w-full max-w-md px-6 py-12 flex flex-col h-full">
       <div className="mb-8">
         <h2 className="text-3xl font-bold tracking-tighter text-primary">Create Profile</h2>
-        <p className="text-muted-foreground">Step {step} of 4</p>
+        <p className="text-muted-foreground">Step {step} of 4 — Telegram verification is required to finish registration.</p>
         <div className="flex gap-1 mt-4">
           {[1, 2, 3, 4].map((i) => (
             <div

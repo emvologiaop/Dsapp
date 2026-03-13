@@ -19,15 +19,26 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
 
   const handleSignupComplete = (data: any) => {
     setUserData(data);
+    if (data?.telegramChatId) {
+      onFinish(data);
+      return;
+    }
+
     setStage('telegram');
   };
 
   const handleLoginComplete = (data: any) => {
-    onFinish(data);
+    if (data?.telegramChatId) {
+      onFinish(data);
+      return;
+    }
+
+    setUserData(data);
+    setStage('telegram');
   };
 
-  const handleTelegramComplete = () => {
-    onFinish(userData);
+  const handleTelegramComplete = (verifiedUser?: any) => {
+    onFinish(verifiedUser || userData);
   };
 
   return (

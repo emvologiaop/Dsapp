@@ -119,6 +119,41 @@ app.use('/api', async (req, res, next) => {
 const bot = initBot(io);
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  messages: true,
+  comments: true,
+  likes: true,
+  follows: true,
+  mentions: true,
+  shares: true,
+};
+
+function normalizeNotificationSettings(input: any) {
+  return {
+    messages: typeof input?.messages === 'boolean' ? input.messages : DEFAULT_NOTIFICATION_SETTINGS.messages,
+    comments: typeof input?.comments === 'boolean' ? input.comments : DEFAULT_NOTIFICATION_SETTINGS.comments,
+    likes: typeof input?.likes === 'boolean' ? input.likes : DEFAULT_NOTIFICATION_SETTINGS.likes,
+    follows: typeof input?.follows === 'boolean' ? input.follows : DEFAULT_NOTIFICATION_SETTINGS.follows,
+    mentions: typeof input?.mentions === 'boolean' ? input.mentions : DEFAULT_NOTIFICATION_SETTINGS.mentions,
+    shares: typeof input?.shares === 'boolean' ? input.shares : DEFAULT_NOTIFICATION_SETTINGS.shares,
+  };
+}
+
+function formatAuthUser(user: any) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    department: user.department,
+    role: user.role,
+    telegramAuthCode: user.telegramAuthCode,
+    telegramChatId: user.telegramChatId,
+    telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+    notificationSettings: normalizeNotificationSettings(user.notificationSettings),
+  };
+}
+
 async function hashPassword(password: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const salt = crypto.randomBytes(16).toString('hex');
@@ -349,7 +384,9 @@ app.post('/api/auth/signup', async (req, res) => {
       department,
       telegramAuthCode,
     });
-    res.status(201).json({ user: serializeAuthUser(user) });
+    res.status(201).json({
+      user: formatAuthUser(user),
+    });
   } catch (error) {
     console.error('POST /api/auth/signup error:', error);
     res.status(500).json({ error: 'Signup failed' });
@@ -366,7 +403,9 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    res.json({ user: serializeAuthUser(user) });
+    res.json({
+      user: formatAuthUser(user),
+    });
   } catch (error) {
     console.error('POST /api/auth/login error:', error);
     res.status(500).json({ error: 'Login failed' });
@@ -377,7 +416,14 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
   try {
     const { code } = req.params;
     const user = await User.findOne({ telegramAuthCode: code });
-    res.json({ verified: !!(user && user.telegramChatId) });
+    if (!user || !user.telegramChatId) {
+      return res.json({ verified: false });
+    }
+
+    res.json({
+      verified: true,
+      user: formatAuthUser(user),
+    });
   } catch (error) {
     console.error('GET /api/auth/verify-telegram error:', error);
     res.status(500).json({ error: 'Verification failed' });
@@ -389,13 +435,14 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
 app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    const scope = req.query.scope === 'ghost' ? 'ghost' : 'feed';
-    const postFilter = {
+    const posts = await Post.find({
       isDeleted: { $ne: true },
-      isAnonymous: scope === 'ghost',
-    };
-    const posts = await Post.find(postFilter)
-      .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers')
+      $or: [
+        { approvalStatus: { $exists: false } },
+        { approvalStatus: 'approved' },
+      ],
+    })
+      .select('userId title content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers contentType groupId place eventTime approvalStatus')
       .sort({ createdAt: -1 })
       .limit(50)
       .populate('userId', 'name username avatarUrl')
@@ -426,47 +473,43 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers, contentType, groupId, title, place, eventTime } = req.body;
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
 
-    const author = await User.findById(userId).lean();
+    const author = await User.findById(userId).select('role').lean();
     if (!author) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const creatingGhostPost = Boolean(isAnonymous);
-    if (creatingGhostPost && !canUseGhostMode(author.createdAt)) {
-      return res.status(403).json({
-        error: `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.`,
-      });
+    const normalizedContentType =
+      contentType === 'group' || contentType === 'event' || contentType === 'academic' || contentType === 'announcement'
+        ? contentType
+        : 'feed';
+
+    if (normalizedContentType === 'group' && !groupId) {
+      return res.status(400).json({ error: 'groupId is required for group posts' });
     }
 
-    if (creatingGhostPost) {
-      const lastGhostPost = await Post.findOne({
-        userId,
-        isAnonymous: true,
-        isDeleted: { $ne: true },
-        createdAt: { $gte: new Date(Date.now() - (GHOST_POST_RATE_LIMIT_HOURS * 60 * 60 * 1000)) },
-      })
-        .sort({ createdAt: -1 })
-        .select('createdAt')
-        .lean();
+    if (normalizedContentType === 'event') {
+      let photoCount = 0;
+      if (Array.isArray(mediaUrls)) {
+        photoCount = mediaUrls.length;
+      } else if (mediaUrl) {
+        photoCount = 1;
+      }
 
-      if (lastGhostPost) {
-        return res.status(429).json({
-          error: `You can only make 1 ghost post every ${GHOST_POST_RATE_LIMIT_HOURS} hours.`,
-        });
+      if (!title || !place || !eventTime || !photoCount) {
+        return res.status(400).json({ error: 'Events require title, description, photo, time, and place' });
       }
     }
 
-    const normalizedContent = creatingGhostPost
-      ? stripMentionsFromGhostContent(content).trim()
-      : content;
-    if (!normalizedContent) {
-      return res.status(400).json({ error: 'Ghost post content cannot be empty after removing mentions.' });
+    if ((normalizedContentType === 'academic' || normalizedContentType === 'announcement') && author.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can publish this content type' });
     }
+
+    const approvalStatus = normalizedContentType === 'event' && author.role !== 'admin' ? 'pending' : 'approved';
 
     // Extract mentions from content
     const mentions = creatingGhostPost ? [] : extractMentions(normalizedContent);
@@ -474,11 +517,17 @@ app.post('/api/posts', async (req, res) => {
 
     const post = await Post.create({
       userId,
-      content: normalizedContent,
-      isAnonymous: creatingGhostPost,
+      title,
+      content,
+      isAnonymous: normalizedContentType === 'feed' ? Boolean(isAnonymous) : false,
       mediaUrl,
       mediaUrls: mediaUrls || [],
-      taggedUsers: normalizedTaggedUsers,
+      contentType: normalizedContentType,
+      groupId,
+      place,
+      eventTime: eventTime ? new Date(eventTime) : undefined,
+      approvalStatus,
+      taggedUsers: taggedUsers || [],
       mentions
     });
 
@@ -487,14 +536,15 @@ app.post('/api/posts', async (req, res) => {
     }
 
     // Send mention notifications
-    if (mentions.length > 0 && !creatingGhostPost) {
+    if (approvalStatus === 'approved' && mentions.length > 0 && !post.isAnonymous) {
       await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
     }
 
     // Send tag notifications to tagged users
-    if (normalizedTaggedUsers.length > 0 && !creatingGhostPost) {
-      if (author) {
-        const filteredTaggedUsers = normalizedTaggedUsers.filter((id: string) => id !== userId);
+    if (approvalStatus === 'approved' && taggedUsers && taggedUsers.length > 0 && !post.isAnonymous) {
+      const tagger = await User.findById(userId).lean();
+      if (tagger) {
+        const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
         if (filteredTaggedUsers.length > 0) {
           const tagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
             userId: taggedUserId,
@@ -787,22 +837,25 @@ app.get('/api/reports/:userId', async (req, res) => {
 app.put('/api/users/:userId/telegram-notifications', async (req, res) => {
   try {
     const { userId } = req.params;
-    const { enabled } = req.body;
+    const { enabled, settings } = req.body;
     if (typeof enabled !== 'boolean') {
       return res.status(400).json({ error: 'enabled must be a boolean' });
     }
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { telegramNotificationsEnabled: enabled },
-      { new: true }
-    );
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ telegramNotificationsEnabled: user.telegramNotificationsEnabled });
+    user.telegramNotificationsEnabled = enabled;
+    user.notificationSettings = normalizeNotificationSettings(settings ?? user.notificationSettings);
+    await user.save();
+
+    res.json({
+      telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+      notificationSettings: normalizeNotificationSettings(user.notificationSettings),
+    });
   } catch (error) {
     console.error('PUT /api/users/:userId/telegram-notifications error:', error);
     res.status(500).json({ error: 'Failed to update notification preference' });
@@ -2182,6 +2235,32 @@ app.get('/api/admin/posts', authenticate, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('GET /api/admin/posts error:', error);
     res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+app.post('/api/admin/posts/:postId/approval', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { approvalStatus } = req.body;
+
+    if (approvalStatus !== 'approved' && approvalStatus !== 'rejected') {
+      return res.status(400).json({ error: 'approvalStatus must be approved or rejected' });
+    }
+
+    const post = await Post.findByIdAndUpdate(
+      postId,
+      { approvalStatus },
+      { new: true }
+    ).populate('userId', 'name username avatarUrl');
+
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    res.json(post);
+  } catch (error) {
+    console.error('POST /api/admin/posts/:postId/approval error:', error);
+    res.status(500).json({ error: 'Failed to update approval status' });
   }
 });
 

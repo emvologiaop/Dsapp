@@ -842,6 +842,7 @@ export function initBot(io?: any) {
             chatId,
             `✅ *Account linked successfully!*\n\n` +
             `Welcome, ${user.name}! 🎉\n\n` +
+            `Your Telegram account is now approved for authentication and recovery.\n\n` +
             `You'll now receive instant notifications for:\n` +
             `• New messages 💬\n` +
             `• Likes and comments ❤️\n` +

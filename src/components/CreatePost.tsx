@@ -1,17 +1,11 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Send, Image as ImageIcon, Ghost, X, Loader2, UserPlus } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Image as ImageIcon, Ghost, X, Loader2, UserPlus, CalendarDays, MapPin, Megaphone, Newspaper, Users } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
 import { MentionInput } from './MentionInput';
 import { UserTagSelector } from './UserTagSelector';
 import { cn } from '../lib/utils';
 import { uploadMultipleImagesToR2, compressImage, UploadProgress } from '../utils/r2Upload';
-import {
-  canUseGhostMode,
-  GHOST_MODE_MIN_ACCOUNT_AGE_DAYS,
-  GHOST_POST_RATE_LIMIT_HOURS,
-  stripMentionsFromGhostContent,
-} from '../utils/ghostPolicy';
+import { COMMUNITY_GROUPS, CommunitySection, validateComposeInput } from '../utils/community';
 
 interface User {
   _id: string;
@@ -23,11 +17,24 @@ interface User {
 interface CreatePostProps {
   user: any;
   isAnonymous: boolean;
-  onPostCreated: () => void;
+  currentSection: CommunitySection;
+  selectedGroupId?: string;
+  joinedGroupIds?: string[];
+  onPostCreated: (post?: any) => void;
 }
 
-export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPostCreated }) => {
+export const CreatePost: React.FC<CreatePostProps> = ({
+  user,
+  isAnonymous,
+  currentSection,
+  selectedGroupId = 'all',
+  joinedGroupIds = [],
+  onPostCreated,
+}) => {
   const [content, setContent] = useState('');
+  const [title, setTitle] = useState('');
+  const [eventTime, setEventTime] = useState('');
+  const [place, setPlace] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -35,7 +42,71 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
   const [taggedUsers, setTaggedUsers] = useState<User[]>([]);
   const [showTagSelector, setShowTagSelector] = useState(false);
-  const ghostModeLocked = isAnonymous && !!user?.createdAt && !canUseGhostMode(user.createdAt);
+  const [contentType, setContentType] = useState<'feed' | 'group' | 'event' | 'academic' | 'announcement'>('feed');
+  const [groupId, setGroupId] = useState(selectedGroupId !== 'all' ? selectedGroupId : joinedGroupIds[0] || '');
+
+  const userRole = user?.role || 'user';
+  const availableGroups = useMemo(() => COMMUNITY_GROUPS.filter((group) => joinedGroupIds.includes(group.id)), [joinedGroupIds]);
+  const composerTitle =
+    contentType === 'event'
+      ? 'Request an event'
+      : contentType === 'academic'
+        ? 'Post academic news'
+        : contentType === 'group'
+          ? 'Share with your group'
+          : contentType === 'announcement'
+            ? 'Publish announcement'
+            : 'Share with the campus';
+  const composerDescription =
+    contentType === 'event'
+      ? 'Events are reviewed by admins before they appear publicly.'
+      : contentType === 'academic'
+        ? 'Academic updates are reserved for admins.'
+        : contentType === 'group'
+          ? 'Posts stay inside the selected community group.'
+          : contentType === 'announcement'
+            ? 'Announcements appear across the main feed and group spaces.'
+            : 'Use the refreshed composer to post quick campus updates.';
+  const contentPlaceholder =
+    contentType === 'event'
+      ? 'Describe the event agenda, who should attend, and any registration details...'
+      : contentType === 'academic'
+        ? 'Share the full academic update for students...'
+        : contentType === 'announcement'
+          ? 'Write the announcement or ad that should appear across the platform...'
+          : contentType === 'group'
+            ? 'What does your group need to know?'
+            : isAnonymous
+              ? 'Post anonymously as DDU Ghost...'
+              : "What's happening on campus?";
+  const submitLabel =
+    contentType === 'event'
+      ? 'Request'
+      : contentType === 'announcement'
+        ? 'Publish'
+        : contentType === 'academic'
+          ? 'Post News'
+          : 'Post';
+
+  useEffect(() => {
+    if (currentSection === 'groups') {
+      setContentType('group');
+      setGroupId(selectedGroupId !== 'all' ? selectedGroupId : joinedGroupIds[0] || '');
+      return;
+    }
+
+    if (currentSection === 'events') {
+      setContentType('event');
+      return;
+    }
+
+    if (currentSection === 'academics') {
+      setContentType('academic');
+      return;
+    }
+
+    setContentType((previous) => (previous === 'announcement' ? 'announcement' : 'feed'));
+  }, [currentSection, joinedGroupIds, selectedGroupId]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -60,7 +131,22 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   };
 
   const handlePost = async () => {
-    if (!content.trim()) return;
+    const validationError = validateComposeInput({
+      content,
+      contentType,
+      userRole,
+      title,
+      place,
+      eventTime,
+      mediaCount: selectedImages.length || imagePreviews.length,
+      groupId,
+    });
+
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
     setIsPosting(true);
     setUploadProgress(0);
 
@@ -96,21 +182,33 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          content: normalizedContent,
-          isAnonymous,
+          title: title.trim() || undefined,
+          content,
+          isAnonymous: contentType === 'feed' ? isAnonymous : false,
           mediaUrls,
-          taggedUsers: taggedUsers.map(u => u._id)
+          taggedUsers: taggedUsers.map(u => u._id),
+          contentType,
+          groupId: contentType === 'group' ? groupId : undefined,
+          place: contentType === 'event' ? place.trim() : undefined,
+          eventTime: contentType === 'event' ? eventTime : undefined,
         })
       });
 
       if (response.ok) {
+        const createdPost = await response.json();
         setContent('');
+        setTitle('');
+        setEventTime('');
+        setPlace('');
         setSelectedImages([]);
         setImagePreviews([]);
         setTaggedUsers([]);
         setShowTagSelector(false);
         setUploadProgress(100);
-        onPostCreated();
+        if (currentSection === 'groups') {
+          setGroupId(selectedGroupId !== 'all' ? selectedGroupId : joinedGroupIds[0] || '');
+        }
+        onPostCreated(createdPost);
       } else {
         const data = await response.json().catch(() => null);
         throw new Error(data?.error || 'Post failed');
@@ -125,16 +223,105 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   };
 
   return (
-    <FriendlyCard className="space-y-4">
+    <FriendlyCard className="space-y-4 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold">{composerTitle}</p>
+          <p className="text-xs text-muted-foreground">{composerDescription}</p>
+        </div>
+        {currentSection === 'feed' && userRole === 'admin' && (
+          <div className="flex rounded-xl bg-muted p-1">
+            {[
+              { id: 'feed', label: 'Post' },
+              { id: 'announcement', label: 'Announcement' },
+            ].map((option) => (
+              <button
+                key={option.id}
+                onClick={() => setContentType(option.id as 'feed' | 'announcement')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors',
+                  contentType === option.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                )}
+                disabled={isPosting}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(contentType === 'event' || contentType === 'academic' || contentType === 'announcement') && (
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={contentType === 'event' ? 'Event title' : contentType === 'academic' ? 'News headline' : 'Announcement title'}
+          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+          disabled={isPosting}
+        />
+      )}
+
+      {contentType === 'group' && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            <Users size={14} />
+            Group destination
+          </div>
+          <select
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
+            disabled={isPosting || availableGroups.length === 0}
+          >
+            {availableGroups.length === 0 ? (
+              <option value="">Join a group first</option>
+            ) : (
+              availableGroups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+      )}
+
+      {contentType === 'event' && (
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm">
+            <CalendarDays size={16} className="text-primary" />
+            <input
+              type="datetime-local"
+              value={eventTime}
+              onChange={(e) => setEventTime(e.target.value)}
+              className="w-full bg-transparent outline-none"
+              disabled={isPosting}
+            />
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm">
+            <MapPin size={16} className="text-primary" />
+            <input
+              type="text"
+              value={place}
+              onChange={(e) => setPlace(e.target.value)}
+              placeholder="Place"
+              className="w-full bg-transparent outline-none"
+              disabled={isPosting}
+            />
+          </label>
+        </div>
+      )}
+
       <div className="flex gap-3">
         <div className="w-10 h-10 rounded-full bg-muted shrink-0 flex items-center justify-center">
-          {isAnonymous ? <Ghost size={20} className="text-muted-foreground" /> : (user?.name?.[0] || 'U')}
+          {contentType === 'feed' && isAnonymous ? <Ghost size={20} className="text-muted-foreground" /> : (user?.name?.[0] || 'U')}
         </div>
         <div className="flex-1">
-          <MentionInput
-            value={content}
-            onChange={setContent}
-            placeholder={isAnonymous ? "Post anonymously as DDU Ghost..." : "What's happening on campus?"}
+            <MentionInput
+              value={content}
+              onChange={setContent}
+            placeholder={contentPlaceholder}
             textareaClassName="border-0 focus:ring-0 p-0"
             rows={3}
             disabled={isPosting}
@@ -180,7 +367,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
       )}
 
       {/* Tag selector - only show if not anonymous */}
-      {!isAnonymous && (
+      {contentType === 'feed' && !isAnonymous && (
         <div className="space-y-2">
           {showTagSelector && (
             <UserTagSelector
@@ -206,7 +393,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
               disabled={imagePreviews.length >= 10 || isPosting}
             />
           </label>
-          {!isAnonymous && (
+          {contentType === 'feed' && !isAnonymous && (
             <button
               onClick={() => setShowTagSelector(!showTagSelector)}
               className={cn(
@@ -218,17 +405,19 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
               <UserPlus size={20} />
             </button>
           )}
+          {contentType === 'announcement' && <Megaphone size={18} className="text-amber-500" />}
+          {contentType === 'academic' && <Newspaper size={18} className="text-sky-500" />}
           {imagePreviews.length > 0 && (
             <span className="text-xs text-muted-foreground">{imagePreviews.length}/10</span>
           )}
         </div>
-          <button
-            onClick={handlePost}
-            disabled={isPosting || !content.trim() || ghostModeLocked}
-            className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-          >
+        <button
+          onClick={handlePost}
+          disabled={isPosting || !content.trim() || (contentType === 'group' && !groupId)}
+          className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+        >
           {isPosting && <Loader2 size={16} className="animate-spin" />}
-          {isPosting ? (uploadProgress > 0 ? `${uploadProgress}%` : "Posting...") : "Post"}
+          {isPosting ? (uploadProgress > 0 ? `${Math.round(uploadProgress)}%` : "Posting...") : submitLabel}
         </button>
       </div>
     </FriendlyCard>
