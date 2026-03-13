@@ -1,4 +1,4 @@
-import { isValidObjectId } from './validation';
+import { isValidObjectId } from './validation.js';
 
 type HeaderValue = string | string[] | undefined;
 
