@@ -2,8 +2,6 @@
  * R2 Upload utilities for client-side file uploads to Cloudflare R2
  */
 
-const API_BASE_URL = '/api';
-
 export interface UploadProgress {
   loaded: number;
   total: number;
@@ -84,7 +82,7 @@ export async function uploadVideoToR2(
       reject(new Error('Upload aborted'));
     });
 
-    xhr.open('POST', `${API_BASE_URL}/api/reels/upload-r2`);
+    xhr.open('POST', '/api/reels/upload-r2');
     xhr.send(formData);
   });
 }
@@ -131,7 +129,7 @@ export async function uploadImageToR2(
       reject(new Error('Upload failed'));
     });
 
-    xhr.open('POST', `${API_BASE_URL}/api/images/upload-r2`);
+    xhr.open('POST', '/api/images/upload-r2');
     xhr.send(formData);
   });
 }
@@ -180,7 +178,7 @@ export async function uploadMultipleImagesToR2(
       reject(new Error('Upload failed'));
     });
 
-    xhr.open('POST', `${API_BASE_URL}/api/images/upload-multiple-r2`);
+    xhr.open('POST', '/api/images/upload-multiple-r2');
     xhr.send(formData);
   });
 }

@@ -5,7 +5,8 @@ import { X, Send, Ghost } from 'lucide-react';
 interface Comment {
   _id: string;
   userId: { _id: string; name: string } | null;
-  text: string;
+  content: string;
+  text?: string;
   isAnonymous: boolean;
   createdAt: string;
 }
@@ -15,6 +16,7 @@ interface ReelCommentsPanelProps {
   userId: string;
   isAnonymous: boolean;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
 }
 
 export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
@@ -22,6 +24,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
   userId,
   isAnonymous,
   onClose,
+  onViewProfile,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -52,13 +55,16 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          text: newComment,
+          content: newComment,
           isAnonymous,
         }),
       });
       if (response.ok) {
         setNewComment('');
         fetchComments();
+      } else {
+        const data = await response.json().catch(() => null);
+        alert(data?.error || 'Failed to post comment.');
       }
     } catch (error) {
       console.error('Error posting comment:', error);
@@ -81,7 +87,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-          className="w-full bg-background rounded-t-3xl shadow-xl max-h-[80vh] flex flex-col"
+          className="fixed inset-0 w-full bg-background shadow-xl flex flex-col md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[80vh] md:rounded-t-3xl"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -90,6 +96,9 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
             <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
               <X size={20} />
             </button>
+          </div>
+          <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+            Comments always use your real profile.
           </div>
 
           {/* Comments List */}
@@ -108,7 +117,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                     <p className="text-sm font-bold">
                       {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
                     </p>
-                    <p className="text-sm text-foreground mt-1">{comment.text}</p>
+                    <p className="text-sm text-foreground mt-1">{comment.content || comment.text}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(comment.createdAt).toLocaleString()}
                     </p>
@@ -130,7 +139,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-                placeholder={isAnonymous ? 'Comment as Ghost...' : 'Add a comment...'}
+                placeholder="Add a comment..."
                 className="flex-1 bg-muted border border-border rounded-full px-4 py-2 text-sm outline-none focus:border-primary"
                 disabled={isLoading}
               />

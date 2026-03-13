@@ -65,6 +65,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onComplete, onSwitchToSign
       <div className="mb-8">
         <h2 className="text-3xl font-bold tracking-tighter text-primary">Welcome Back</h2>
         <p className="text-muted-foreground">Sign in to your DDU Social account</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Accounts must stay linked to Telegram for authentication, recovery, and optional bot notifications.
+        </p>
       </div>
 
       <div className="flex-1 space-y-6">

@@ -138,6 +138,86 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setFormData(prev => ({ ...prev, [name]: name === 'username' ? value.toLowerCase() : value }));
   };
 
+  const handleVerificationRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifError('');
+    setVerifMessage('');
+    if (!verifRealName.trim()) { setVerifError('Please enter your real name.'); return; }
+    if (!verifPhotoUrl.trim()) { setVerifError('Please provide a photo URL.'); return; }
+    setVerifLoading(true);
+    try {
+      const response = await fetch(`/api/users/${user.id}/verification-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, realName: verifRealName, photoUrl: verifPhotoUrl, note: verifNote }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setVerifMessage(data.message || 'Verification request submitted!');
+        setVerifRealName('');
+        setVerifPhotoUrl('');
+        setVerifNote('');
+      } else {
+        setVerifError(data.error || 'Failed to submit request');
+      }
+    } catch {
+      setVerifError('Something went wrong. Please try again.');
+    } finally {
+      setVerifLoading(false);
+    }
+  };
+
+  const verificationStatus = user?.verificationStatus;
+  const badgeType = user?.badgeType;
+
+  const renderVerificationStatus = () => {
+    if (badgeType === 'gold') {
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 bg-yellow-400/10 border border-yellow-400/30 rounded-lg">
+          <BadgeCheck className="w-5 h-5 text-yellow-500" fill="currentColor" />
+          <div>
+            <p className="text-sm font-semibold text-yellow-600">Gold Badge — Verified</p>
+            <p className="text-xs text-muted-foreground">Your account has a gold verification badge.</p>
+          </div>
+        </div>
+      );
+    }
+    if (badgeType === 'blue' || user?.isVerified) {
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+          <BadgeCheck className="w-5 h-5 text-blue-500" fill="currentColor" />
+          <div>
+            <p className="text-sm font-semibold text-blue-600">Blue Badge — Verified</p>
+            <p className="text-xs text-muted-foreground">Your account has a blue verification badge.</p>
+          </div>
+        </div>
+      );
+    }
+    if (verificationStatus === 'pending') {
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+          <Clock className="w-5 h-5 text-orange-500" />
+          <div>
+            <p className="text-sm font-semibold text-orange-600">Under Review</p>
+            <p className="text-xs text-muted-foreground">Your verification request is being reviewed by an admin.</p>
+          </div>
+        </div>
+      );
+    }
+    if (verificationStatus === 'rejected') {
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <XCircle className="w-5 h-5 text-red-500" />
+          <div>
+            <p className="text-sm font-semibold text-red-600">Request Rejected</p>
+            <p className="text-xs text-muted-foreground">Your previous request was not approved. You may submit a new request.</p>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -187,6 +267,8 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {/* Name */}
                   <div>
                     <input
                       ref={fileInputRef}
@@ -210,21 +292,23 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     </button>
                     <p className="text-xs text-muted-foreground mt-1">JPG, PNG or WebP, max 5MB</p>
                   </div>
-                </div>
 
-                {/* Name */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Name</label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    placeholder="Your name"
-                    required
-                  />
-                </div>
+                  {/* Username */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Username</label>
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      placeholder="username"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Your unique DDU Social handle
+                    </p>
+                  </div>
 
                 {/* Username */}
                 <div>
@@ -243,98 +327,173 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   </p>
                 </div>
 
-                {/* Bio */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Bio</label>
-                  <textarea
-                    name="bio"
-                    value={formData.bio}
-                    onChange={handleChange}
-                    rows={3}
-                    maxLength={150}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-                    placeholder="Tell us about yourself..."
-                  />
-                  <p className="text-xs text-muted-foreground mt-1 text-right">
-                    {formData.bio.length}/150
-                  </p>
-                </div>
-
-                {/* Website */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Website</label>
-                  <input
-                    type="text"
-                    name="website"
-                    value={formData.website}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    placeholder="yourwebsite.com"
-                  />
-                </div>
-
-                {/* Location */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Location</label>
-                  <input
-                    type="text"
-                    name="location"
-                    value={formData.location}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    placeholder="City, Country"
-                  />
-                </div>
-
-                {/* Department */}
-                <div>
-                  <label className="block text-sm font-semibold mb-2">Department</label>
-                  <input
-                    type="text"
-                    name="department"
-                    value={formData.department}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    placeholder="Computer Science, Engineering, etc."
-                  />
-                </div>
-
-                {error && (
-                  <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                    <p className="text-sm text-red-400">{error}</p>
+                  {/* Website */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Website</label>
+                    <input
+                      type="text"
+                      name="website"
+                      value={formData.website}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      placeholder="yourwebsite.com"
+                    />
                   </div>
-                )}
-              </div>
 
-              {/* Footer */}
-              <div className="px-6 py-4 border-t border-border flex gap-3">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 px-6 py-2.5 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-lg transition-all"
-                  disabled={isLoading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className={cn(
-                    "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
-                    isLoading && "opacity-50 cursor-not-allowed"
+                  {/* Location */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Location</label>
+                    <input
+                      type="text"
+                      name="location"
+                      value={formData.location}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      placeholder="City, Country"
+                    />
+                  </div>
+
+                  {/* Department */}
+                  <div>
+                    <label className="block text-sm font-semibold mb-2">Department</label>
+                    <input
+                      type="text"
+                      name="department"
+                      value={formData.department}
+                      onChange={handleChange}
+                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      placeholder="Computer Science, Engineering, etc."
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                      <p className="text-sm text-red-400">{error}</p>
+                    </div>
                   )}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save'
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-border flex gap-3">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 px-6 py-2.5 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-lg transition-all"
+                    disabled={isLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className={cn(
+                      "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
+                      isLoading && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save'
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Verification Section */
+              <div className="overflow-y-auto max-h-[calc(90vh-180px)]">
+                <div className="px-6 py-6 space-y-5">
+                  <div>
+                    <h3 className="text-base font-bold mb-1">Request Verification</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Submit your real identity for admin review. Verified accounts receive a blue or gold badge displayed on your profile.
+                    </p>
+                  </div>
+
+                  {/* Current status */}
+                  {renderVerificationStatus()}
+
+                  {/* Only show form if not already approved */}
+                  {badgeType !== 'blue' && badgeType !== 'gold' && !user?.isVerified && verificationStatus !== 'pending' && (
+                    <form onSubmit={handleVerificationRequest} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-semibold mb-2">Real Name <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          value={verifRealName}
+                          onChange={e => setVerifRealName(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                          placeholder="Enter your real full name"
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">Provide your legal name as it appears on your ID.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2">Photo URL <span className="text-red-500">*</span></label>
+                        <input
+                          type="url"
+                          value={verifPhotoUrl}
+                          onChange={e => setVerifPhotoUrl(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                          placeholder="https://example.com/your-photo.jpg"
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">Link to a clear photo of yourself for identity verification.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-semibold mb-2">Additional Note</label>
+                        <textarea
+                          value={verifNote}
+                          onChange={e => setVerifNote(e.target.value)}
+                          rows={2}
+                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                          placeholder="E.g. I am a professor at XYZ university, or any additional context..."
+                        />
+                      </div>
+
+                      {verifError && (
+                        <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                          <p className="text-sm text-red-400">{verifError}</p>
+                        </div>
+                      )}
+                      {verifMessage && (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                          <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
+                          <p className="text-sm text-green-600">{verifMessage}</p>
+                        </div>
+                      )}
+
+                      <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground space-y-1">
+                        <p className="font-semibold text-foreground">How it works:</p>
+                        <p>🔵 <strong>Blue badge</strong> — Awarded to verified personal accounts.</p>
+                        <p>🟡 <strong>Gold badge</strong> — Awarded to academics, organizations, or notable accounts.</p>
+                        <p>Your request will be reviewed by an admin. Providing false information may result in rejection or account action.</p>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={verifLoading}
+                        className={cn(
+                          "w-full px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
+                          verifLoading && "opacity-50 cursor-not-allowed"
+                        )}
+                      >
+                        {verifLoading ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Submitting...</>
+                        ) : (
+                          <><BadgeCheck className="w-4 h-4" /> Submit Verification Request</>
+                        )}
+                      </button>
+                    </form>
                   )}
-                </button>
+                </div>
               </div>
-            </form>
+            )}
           </FriendlyCard>
         </motion.div>
       </div>

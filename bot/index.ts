@@ -7,12 +7,16 @@ import { Notification } from '../src/models/Notification.js';
 import { Message } from '../src/models/Message.js';
 import { Post } from '../src/models/Post.js';
 import { connectDB } from '../src/db.js';
+import { resolveTelegramWebhookUrl } from '../src/utils/telegram.js';
 
 dotenv.config();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api/telegram/webhook` : undefined);
+const webhookUrl = resolveTelegramWebhookUrl({
+  explicitUrl: process.env.TELEGRAM_WEBHOOK_URL,
+  appUrl: process.env.APP_URL,
+  vercelUrl: process.env.VERCEL_URL,
+});
 const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 const useWebhook = Boolean(webhookUrl);
 
@@ -72,11 +76,21 @@ export function initBot(io?: any) {
 
   const bot = new TelegramBot(token, { polling: !useWebhook });
 
+  // Log polling/webhook errors to aid debugging
+  bot.on('polling_error', (error) => {
+    console.error('Telegram bot polling error:', error.message);
+  });
+
+  bot.on('webhook_error', (error) => {
+    console.error('Telegram bot webhook error:', error.message);
+  });
+
   // Log admin configuration on startup
   console.log("Telegram Bot initializing with admin config:");
   console.log(`  Admin Email: ${ADMIN_EMAIL}`);
   console.log(`  Admin Telegram: ${ADMIN_TELEGRAM_USERNAME}`);
   console.log(`  Admin User ID: ${ADMIN_TELEGRAM_USER_ID}`);
+  console.log(`  Webhook mode: ${useWebhook ? `enabled (${webhookUrl})` : 'disabled (polling)'}`);
 
   // Ensure DB connectivity and set webhook if configured
   (async () => {
@@ -842,6 +856,7 @@ export function initBot(io?: any) {
             chatId,
             `✅ *Account linked successfully!*\n\n` +
             `Welcome, ${user.name}! 🎉\n\n` +
+            `Your Telegram account is now approved for authentication and recovery.\n\n` +
             `You'll now receive instant notifications for:\n` +
             `• New messages 💬\n` +
             `• Likes and comments ❤️\n` +

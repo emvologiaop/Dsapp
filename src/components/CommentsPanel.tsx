@@ -18,6 +18,7 @@ interface CommentsPanelProps {
   userId: string;
   isAnonymous: boolean;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
 }
 
 const getTimeAgo = (dateStr: string): string => {
@@ -98,7 +99,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, content: text, isAnonymous }),
+        body: JSON.stringify({ userId, content: text, isAnonymous: false }),
       });
 
       if (res.ok) {
@@ -117,6 +118,9 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
         }
         setText('');
         setReplyingTo(null);
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error || 'Failed to post comment.');
       }
     } catch (error) {
       console.error('Failed to post comment:', error);
@@ -138,13 +142,16 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
         initial={{ opacity: 0, y: 100 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 100 }}
-        className="fixed bottom-0 left-0 right-0 bg-background rounded-t-2xl z-50 max-h-[75vh] flex flex-col shadow-2xl border border-border"
+        className="fixed inset-0 bg-background z-50 flex flex-col shadow-2xl md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[75vh] md:rounded-t-2xl md:border md:border-border"
       >
         <div className="p-4 border-b border-border flex items-center justify-between">
           <h3 className="font-bold text-lg">Comments</h3>
           <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+          Comments always use your real profile.
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">

@@ -17,4 +17,7 @@ const ShareSchema = new Schema<IShare>(
   { timestamps: true }
 );
 
+ShareSchema.index({ receiverId: 1, createdAt: -1 }); // For inbox queries
+ShareSchema.index({ senderId: 1, createdAt: -1 }); // For sent shares queries
+
 export const Share = mongoose.model<IShare>('Share', ShareSchema);

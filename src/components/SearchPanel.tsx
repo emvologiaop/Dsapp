@@ -9,14 +9,22 @@ interface SearchResult {
 }
 
 interface SearchPanelProps {
+  currentUserId?: string;
+  initialQuery?: string;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
+  onStartChat?: (user: any) => void;
 }
 
-export function SearchPanel({ onClose }: SearchPanelProps) {
-  const [query, setQuery] = useState('');
+export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewProfile, onStartChat }: SearchPanelProps) {
+  const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<SearchResult>({ users: [], posts: [], reels: [] });
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'users' | 'posts' | 'reels'>('all');
+
+  useEffect(() => {
+    setQuery(initialQuery);
+  }, [initialQuery]);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -59,8 +67,8 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
   const totalResults = filteredResults.users.length + filteredResults.posts.length + filteredResults.reels.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-20 overflow-y-auto">
-      <FriendlyCard className="max-w-2xl w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-background flex flex-col md:bg-black/50 md:items-center md:justify-center md:p-6">
+      <FriendlyCard className="flex h-full min-h-0 w-full flex-1 flex-col rounded-none border-0 p-4 shadow-none md:h-auto md:max-h-[80vh] md:max-w-2xl md:rounded-3xl md:border md:p-6 md:shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">Search</h2>
           <button
@@ -78,7 +86,7 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search users, posts, or reels..."
+            placeholder="Search users, posts, reels, or #hashtags..."
             className="w-full pl-10 pr-4 py-3 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
             autoFocus
           />
@@ -140,7 +148,12 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                       key={user._id}
                       className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 justify-between">
+                        <button
+                          type="button"
+                          onClick={() => onViewProfile?.(user._id)}
+                          className="flex items-center gap-3 text-left flex-1 min-w-0"
+                        >
                         <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center font-bold text-accent">
                           {user.avatarUrl ? (
                             <img src={user.avatarUrl} alt={user.name} className="w-full h-full rounded-full object-cover" />
@@ -148,14 +161,24 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                             user.name?.[0] || 'U'
                           )}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-bold text-sm">{user.name}</p>
                           <p className="text-xs text-muted-foreground">@{user.username}</p>
                           {user.bio && <p className="text-xs text-muted-foreground line-clamp-1">{user.bio}</p>}
                         </div>
+                        </button>
+                        {user._id !== currentUserId && (
+                          <button
+                            type="button"
+                            onClick={() => onStartChat?.(user)}
+                            className="px-3 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded-lg shrink-0"
+                          >
+                            Message
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -172,10 +195,14 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                       key={post._id}
                       className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 mb-2">
-                        <p className="font-bold text-sm">{post.userId?.name || 'Unknown'}</p>
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(post.userId?._id)}
+                        className="flex items-center gap-2 mb-2 text-left"
+                      >
+                        <p className="font-bold text-sm hover:text-primary transition-colors">{post.userId?.name || 'Unknown'}</p>
                         <span className="text-xs text-muted-foreground">@{post.userId?.username}</span>
-                      </div>
+                      </button>
                       <p className="text-sm line-clamp-3">{post.content}</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {new Date(post.createdAt).toLocaleDateString()}
@@ -198,11 +225,15 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                       key={reel._id}
                       className="p-3 bg-muted rounded-lg hover:bg-muted/80 transition-colors cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(reel.userId?._id)}
+                        className="flex items-center gap-2 mb-2 text-left"
+                      >
                         <Film size={16} className="text-primary" />
-                        <p className="font-bold text-sm">{reel.userId?.name || 'Unknown'}</p>
+                        <p className="font-bold text-sm hover:text-primary transition-colors">{reel.userId?.name || 'Unknown'}</p>
                         <span className="text-xs text-muted-foreground">@{reel.userId?.username}</span>
-                      </div>
+                      </button>
                       <p className="text-sm line-clamp-2">{reel.caption || 'No caption'}</p>
                       <p className="text-xs text-muted-foreground mt-1">
                         {new Date(reel.createdAt).toLocaleDateString()}
@@ -210,10 +241,10 @@ export function SearchPanel({ onClose }: SearchPanelProps) {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </FriendlyCard>
     </div>
   );

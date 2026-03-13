@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
 import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
@@ -21,11 +21,14 @@ import { InstagramProfile } from './components/InstagramProfile';
 import { EditProfileModal } from './components/EditProfileModal';
 import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { HashtagText } from './components/HashtagText';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
+  const [homeFeedTab, setHomeFeedTab] = useState<'feed' | 'ghost'>('feed');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -36,7 +39,20 @@ export default function App() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [viewingProfileUserId, setViewingProfileUserId] = useState<string | null>(null);
+  const [searchInitialQuery, setSearchInitialQuery] = useState('');
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [homeSection, setHomeSection] = useState<CommunitySection>('feed');
+  const [selectedGroupId, setSelectedGroupId] = useState('all');
+  const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
+
+  // Stable refs to avoid stale closures in socket effects
+  const fetchChatsRef = useRef<(() => void) | null>(null);
+  const chatDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -68,24 +84,60 @@ export default function App() {
         if (parsedUser.telegramNotificationsEnabled !== undefined) {
           setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
         }
+        setNotificationSettings(normalizeNotificationSettings(parsedUser.notificationSettings));
       } catch (e) {
         localStorage.removeItem('ddu_user');
       }
     }
+
+    // Check maintenance mode
+    fetch('/api/system/maintenance')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setMaintenanceMode(data.maintenanceMode);
+          setMaintenanceMessage(data.maintenanceMessage || '');
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
+      fetchStories();
     }
     if (isOnboarded && activeTab === 'chat') {
       fetchChats();
     }
-  }, [isOnboarded, activeTab]);
+  }, [isOnboarded, activeTab, user?.id]);
 
-  const fetchChats = async () => {
+  // Join the user's socket room at app level so notifications and messages
+  // are received even outside of ChatRoom
+  useEffect(() => {
+    if (!user?.id) return;
+
+    socket.emit('join_chat', user.id);
+
+    // When a new message arrives, refresh the chat list so the preview updates.
+    // Debounce via ref to avoid multiple API calls when several messages arrive at once.
+    const handleNewMessage = () => {
+      if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
+      chatDebounceRef.current = setTimeout(() => fetchChatsRef.current?.(), 300);
+    };
+
+    socket.on('receive_private_message', handleNewMessage);
+
+    return () => {
+      socket.off('receive_private_message', handleNewMessage);
+      if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
+    };
+  }, [user?.id]);
+
+  const fetchChats = useCallback(async () => {
+    if (!user?.id) return;
     try {
-      const response = await fetch(`/api/users/${user?.id}/chats`);
+      const response = await fetch(`/api/users/${user.id}/chats`);
       if (response.ok) {
         const data = await response.json();
         setChats(data);
@@ -93,11 +145,18 @@ export default function App() {
     } catch (error) {
       console.error("Error fetching chats:", error);
     }
-  };
+  }, [user?.id]);
+
+  // Keep the ref in sync so the socket handler always calls the latest version
+  useEffect(() => {
+    fetchChatsRef.current = fetchChats;
+  }, [fetchChats]);
 
   const fetchPosts = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/posts?userId=${user?.id}`);
+      const response = await fetch(`/api/posts?userId=${user.id}`);
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -111,15 +170,42 @@ export default function App() {
     }
   };
 
+  const fetchStories = async () => {
+    if (!user?.id) return;
+
+    try {
+      const response = await fetch(`/api/stories?userId=${user.id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch stories');
+      }
+
+      const data = await response.json();
+      setStoryGroups(sortStoryGroups(data, user.id));
+    } catch (error) {
+      console.error('Error fetching stories:', error);
+    }
+  };
+
   const handleOnboardingFinish = (userData: any) => {
-    setUser(userData);
+    const normalizedUser = {
+      ...userData,
+      notificationSettings: normalizeNotificationSettings(userData.notificationSettings),
+    };
+    setUser(normalizedUser);
     setIsOnboarded(true);
-    localStorage.setItem('ddu_user', JSON.stringify(userData));
+    setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
+    setNotificationSettings(normalizedUser.notificationSettings);
+    localStorage.setItem('ddu_user', JSON.stringify(normalizedUser));
   };
 
   const handleProfileUpdate = (updatedUser: any) => {
-    const mergedUser = { ...user, ...updatedUser };
+    const mergedUser = {
+      ...user,
+      ...updatedUser,
+      notificationSettings: normalizeNotificationSettings(updatedUser.notificationSettings ?? user?.notificationSettings),
+    };
     setUser(mergedUser);
+    setNotificationSettings(mergedUser.notificationSettings);
     localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
   };
 
@@ -129,12 +215,19 @@ export default function App() {
       const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newValue })
+        body: JSON.stringify({ enabled: newValue, settings: notificationSettings })
       });
 
       if (response.ok) {
-        setTelegramNotificationsEnabled(newValue);
-        const updatedUser = { ...user, telegramNotificationsEnabled: newValue };
+        const data = await response.json();
+        setTelegramNotificationsEnabled(data.telegramNotificationsEnabled);
+        const nextSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(nextSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: nextSettings,
+        };
         setUser(updatedUser);
         localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
       }
@@ -143,8 +236,47 @@ export default function App() {
     }
   };
 
+  const openProfile = (targetUserId?: string | null) => {
+    if (!targetUserId) return;
+    setViewingProfileUserId(targetUserId);
+    setActiveTab('profile');
+    setShowSearch(false);
+  };
+
+  const openOwnProfile = () => {
+    if (!user?.id) return;
+    setViewingProfileUserId(user.id);
+    setActiveTab('profile');
+  };
+
+  const startChatWithUser = (targetUser: any) => {
+    if (!targetUser) return;
+
+    const normalizedUser = {
+      id: targetUser.id || targetUser._id,
+      name: targetUser.name || 'User',
+      username: targetUser.username || '',
+      avatarUrl: targetUser.avatarUrl || '',
+    };
+
+    if (!normalizedUser.id || normalizedUser.id === user?.id) return;
+
+    setActiveChat(normalizedUser);
+    setShowSearch(false);
+  };
+
+  const openHashtagSearch = (hashtag: string) => {
+    setSearchInitialQuery(hashtag);
+    setShowSearch(true);
+  };
+
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
+  }
+
+  // Show maintenance screen for non-admin users when maintenance mode is active
+  if (maintenanceMode && user?.role !== 'admin') {
+    return <MaintenanceScreen message={maintenanceMessage} />;
   }
 
   if (activeChat) {
@@ -160,6 +292,23 @@ export default function App() {
   if (showAdminDashboard) {
     return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
+
+  const sortedStoryGroups = user?.id ? sortStoryGroups(storyGroups, user.id) : storyGroups;
+  const ownStoryGroup = sortedStoryGroups.find((group) => group.user._id === user?.id);
+  const storyTrayGroups = ownStoryGroup
+    ? sortedStoryGroups
+    : user
+      ? [{
+          user: {
+            _id: user.id,
+            name: user.name,
+            username: user.username,
+            avatarUrl: user.avatarUrl
+          },
+          stories: [],
+          hasViewed: false
+        }, ...sortedStoryGroups]
+      : sortedStoryGroups;
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-24">
@@ -185,16 +334,18 @@ export default function App() {
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
           <button
-            onClick={() => setIsAnonymous(!isAnonymous)}
+            onClick={toggleGhostMode}
             className={cn(
-              "p-2 rounded-full transition-all",
+              "p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
               isAnonymous ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             )}
+            disabled={ghostModeDisabled}
+            title={ghostModeDisabled ? `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days` : 'Ghost mode'}
           >
             <Ghost size={20} />
           </button>
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={openOwnProfile}
             className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center font-bold text-accent overflow-hidden hover:border-accent/50 transition-all"
           >
             {user?.avatarUrl ? (
@@ -214,66 +365,206 @@ export default function App() {
       <main className="px-6 py-6 max-w-2xl mx-auto">
         {activeTab === 'home' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Feed</h2>
-              <button 
-                onClick={() => setShowCreatePost(!showCreatePost)}
-                className="p-2 bg-primary text-primary-foreground rounded-lg"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
+            <FriendlyCard className="space-y-5 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/10 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-primary">
+                    <Sparkles size={14} />
+                    Campus Hub
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">
+                      {homeSection === 'feed'
+                        ? 'Fresh campus feed'
+                        : homeSection === 'groups'
+                          ? 'Student groups'
+                          : homeSection === 'events'
+                            ? 'Events board'
+                            : 'Academic updates'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {homeSection === 'feed'
+                        ? 'A cleaner posting box, highlighted announcements, and quicker campus updates.'
+                        : homeSection === 'groups'
+                          ? 'Join community spaces and post directly into the group conversations you care about.'
+                          : homeSection === 'events'
+                            ? 'Students can request events with title, photo, time, and place for admin approval.'
+                            : 'Admins can publish official academic news, notices, and college updates here.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCreatePost(!showCreatePost)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90"
+                  disabled={homeSection === 'academics' && user?.role !== 'admin'}
+                >
+                  <Plus size={18} />
+                  {homeSection === 'events' ? 'Request Event' : homeSection === 'academics' ? 'Post News' : 'Create'}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'feed', label: 'Feed', icon: Home },
+                  { id: 'groups', label: 'Groups', icon: Users },
+                  { id: 'events', label: 'Events', icon: CalendarDays },
+                  { id: 'academics', label: 'Academics', icon: GraduationCap },
+                ].map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => {
+                      setHomeSection(section.id as CommunitySection);
+                      setShowCreatePost(false);
+                      setComposerNotice(null);
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                      homeSection === section.id
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <section.icon size={16} />
+                    {section.label}
+                  </button>
+                ))}
+              </div>
+
+              {homeSection === 'groups' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedGroupId('all')}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                        selectedGroupId === 'all' ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      All groups
+                    </button>
+                    {joinedGroups.map((groupId) => (
+                      <button
+                        key={groupId}
+                        onClick={() => setSelectedGroupId(groupId)}
+                        className={cn(
+                          'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                          selectedGroupId === groupId ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                        )}
+                      >
+                        {getGroupName(groupId)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {COMMUNITY_GROUPS.map((group) => {
+                      const joined = joinedGroups.includes(group.id);
+                      return (
+                        <FriendlyCard
+                          key={group.id}
+                          className={cn('space-y-3 border border-border/80 bg-gradient-to-br', group.accent)}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-bold">{group.name}</p>
+                              <span className="rounded-full bg-background/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                {group.membersLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{group.summary}</p>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              onClick={() => {
+                                toggleGroupMembership(group.id);
+                                setComposerNotice(null);
+                              }}
+                              className={cn(
+                                'rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
+                                joined ? 'bg-foreground text-background' : 'bg-primary text-primary-foreground'
+                              )}
+                            >
+                              {joined ? 'Leave group' : 'Join group'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedGroupId(group.id);
+                                setHomeSection('groups');
+                              }}
+                              className="text-xs font-semibold text-muted-foreground"
+                            >
+                              Open
+                            </button>
+                          </div>
+                        </FriendlyCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </FriendlyCard>
+
+            {composerNotice && (
+              <FriendlyCard className="border border-emerald-500/20 bg-emerald-500/10 text-sm text-emerald-700 dark:text-emerald-300">
+                {composerNotice}
+              </FriendlyCard>
+            )}
 
             {showCreatePost && (
-              <CreatePost 
-                user={user} 
-                isAnonymous={isAnonymous} 
-                onPostCreated={() => {
+              <CreatePost
+                user={user}
+                isAnonymous={isAnonymous}
+                currentSection={homeSection}
+                selectedGroupId={selectedGroupId}
+                joinedGroupIds={joinedGroups}
+                onPostCreated={(createdPost) => {
                   setShowCreatePost(false);
+                  if (createdPost?.approvalStatus === 'pending') {
+                    setComposerNotice('Your event request was submitted for admin approval and will appear after review.');
+                  } else if (createdPost?.contentType === 'announcement') {
+                    setComposerNotice('Announcement published across the feed and groups.');
+                  } else if (createdPost?.contentType === 'academic') {
+                    setComposerNotice('Academic update published successfully.');
+                  } else {
+                    setComposerNotice(null);
+                  }
                   fetchPosts();
-                }} 
+                }}
               />
             )}
-            
-            {posts.length > 0 ? posts.map((post) => (
+
+            {homeSection === 'academics' && user?.role !== 'admin' && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Only admins can create academic news, but everyone can read the published updates here.
+              </FriendlyCard>
+            )}
+
+            {homeSection === 'groups' && joinedGroups.length === 0 && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Join a group above to start posting in group conversations.
+              </FriendlyCard>
+            )}
+
+            {visiblePosts.length > 0 ? visiblePosts.map((post) => {
+              const contentType = normalizeContentType(post.contentType);
+              return (
               <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => !post.isAnonymous && openProfile(post.userId?._id)}
+                      disabled={post.isAnonymous || !post.userId?._id}
+                      className="flex items-center gap-3 text-left disabled:cursor-default"
+                    >
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                       {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
                     </div>
                     <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                      <p className="text-sm font-bold hover:text-primary transition-colors">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!post.isAnonymous && user && post.userId?._id !== user.id && (
-                      <FollowButton
-                        userId={user.id}
-                        targetId={post.userId._id}
-                        initialIsFollowing={post.isFollowing}
-                      />
-                    )}
-                    {!post.isAnonymous && (
-                      <PostOptions
-                        postId={post._id}
-                        userId={user?.id}
-                        postOwnerId={post.userId?._id}
-                        initialContent={post.content}
-                        initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
-                        onDelete={() => {
-                          setPosts(posts.filter(p => p._id !== post._id));
-                        }}
-                        onEdit={(content, mediaUrls) => {
-                          setPosts(posts.map(p =>
-                            p._id === post._id ? { ...p, content, mediaUrls } : p
-                          ));
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
@@ -286,9 +577,11 @@ export default function App() {
                   />
                 ) : null}
                 <div className="p-4 space-y-2">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {post.content}
-                  </p>
+                  <HashtagText
+                    text={post.content}
+                    className="text-sm text-foreground leading-relaxed whitespace-pre-wrap"
+                    onHashtagClick={openHashtagSearch}
+                  />
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -301,16 +594,25 @@ export default function App() {
                   />
                 </div>
               </FriendlyCard>
-            )) : (
+            );
+            }) : (
               <div className="text-center py-20 text-muted-foreground">
-                <p>No posts yet. Be the first!</p>
+                <p>
+                  {homeSection === 'groups'
+                    ? 'No group posts yet. Share the first update with your community.'
+                    : homeSection === 'events'
+                      ? 'No approved events yet. Request one to get things started.'
+                      : homeSection === 'academics'
+                        ? 'No academic news yet.'
+                        : 'No posts yet. Be the first!'}
+                </p>
               </div>
             )}
           </div>
         )}
 
         {activeTab === 'reels' && (
-          <ReelsTab user={user} />
+          <ReelsTab user={user} onViewProfile={openProfile} onHashtagClick={openHashtagSearch} />
         )}
 
         {activeTab === 'chat' && (
@@ -352,9 +654,11 @@ export default function App() {
 
         {activeTab === 'profile' && user && (
           <InstagramProfile
-            userId={user.id}
+            userId={viewingProfileUserId || user.id}
             currentUserId={user.id}
             onEditProfile={() => setShowEditProfile(true)}
+            onBack={viewingProfileUserId && viewingProfileUserId !== user.id ? openOwnProfile : undefined}
+            onMessageUser={startChatWithUser}
           />
         )}
 
@@ -426,11 +730,12 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setIsAnonymous(!isAnonymous)}
+                    onClick={toggleGhostMode}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
                       isAnonymous ? "bg-primary" : "bg-muted"
                     )}
+                    disabled={ghostModeDisabled}
                   >
                     <div className={cn(
                       "absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm",
@@ -485,6 +790,48 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold">Detailed notification settings</p>
+                      <p className="text-xs text-muted-foreground">
+                        Choose which updates the Telegram bot should surface for your account.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {notificationSettingLabels.map((setting) => (
+                      <div
+                        key={setting.key}
+                        className={cn(
+                          'flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3 transition-colors',
+                          !telegramNotificationsEnabled && 'opacity-60'
+                        )}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{setting.title}</p>
+                          <p className="text-xs text-muted-foreground">{setting.description}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!telegramNotificationsEnabled}
+                          onClick={() => handleNotificationSettingToggle(setting.key)}
+                          className={cn(
+                            'w-12 h-6 rounded-full relative transition-all disabled:cursor-not-allowed',
+                            notificationSettings[setting.key] ? 'bg-accent' : 'bg-muted'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'absolute top-1 w-4 h-4 bg-white rounded-full transition-all',
+                              notificationSettings[setting.key] ? 'right-1' : 'left-1'
+                            )}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </FriendlyCard>
             </div>
 
@@ -540,8 +887,9 @@ export default function App() {
         <CommentsPanel
           postId={commentPostId}
           userId={user.id}
-          isAnonymous={isAnonymous}
+          isAnonymous={false}
           onClose={() => setCommentPostId(null)}
+          onViewProfile={openProfile}
         />
       )}
 
@@ -555,7 +903,37 @@ export default function App() {
       )}
 
       {showSearch && (
-        <SearchPanel onClose={() => setShowSearch(false)} />
+        <SearchPanel
+          currentUserId={user?.id}
+          initialQuery={searchInitialQuery}
+          onClose={() => {
+            setShowSearch(false);
+            setSearchInitialQuery('');
+          }}
+          onViewProfile={openProfile}
+          onStartChat={startChatWithUser}
+        />
+      )}
+
+      {activeStoryGroup && user && (
+        <StoryViewer
+          stories={activeStoryGroup.stories}
+          currentUserId={user.id}
+          onClose={() => {
+            setActiveStoryGroup(null);
+            fetchStories();
+          }}
+        />
+      )}
+
+      {showStoryUpload && user && (
+        <StoryUpload
+          userId={user.id}
+          onClose={() => setShowStoryUpload(false)}
+          onUploadSuccess={() => {
+            fetchStories();
+          }}
+        />
       )}
 
         {/* Bottom Nav */}
@@ -564,7 +942,7 @@ export default function App() {
             { icon: Home, label: 'Home', onClick: () => setActiveTab('home') },
             { icon: Film, label: 'Reels', onClick: () => setActiveTab('reels') },
             { icon: MessageSquare, label: 'Chat', onClick: () => setActiveTab('chat') },
-            { icon: User, label: 'Profile', onClick: () => setActiveTab('profile') },
+            { icon: User, label: 'Profile', onClick: openOwnProfile },
             { icon: Settings, label: 'Settings', onClick: () => setActiveTab('settings') },
           ]}
           className="fixed bottom-0 left-0 right-0 z-40"
