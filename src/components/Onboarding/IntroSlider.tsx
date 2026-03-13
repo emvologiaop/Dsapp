@@ -9,32 +9,42 @@ interface Slide {
   description: string;
   icon: React.ReactNode;
   color: string;
+  accent: string;
+  badge: string;
 }
 
 const slides: Slide[] = [
   {
-    title: "Stay Connected",
-    description: "Share updates, photos, and announcements with your campus community in one place.",
+    title: "DDU Morning Hustle",
+    description: "Lecture at 8:10, chai at 8:15. Drop updates faster than attendance sheets get passed around.",
     icon: <Zap className="w-16 h-16" />,
-    color: "text-primary"
+    color: "text-primary",
+    accent: "from-sky-500/30 via-blue-500/10 to-violet-500/20",
+    badge: "8:10 shuttle squad"
   },
   {
-    title: "Choose Your Presence",
-    description: "Post with your name or switch to ghost mode when you need extra privacy.",
+    title: "Canteen Chronicles",
+    description: "Share samosa intel, meme drops, and last-minute assignment SOS with the whole campus crew.",
     icon: <Share2 className="w-16 h-16" />,
-    color: "text-primary"
+    color: "text-primary",
+    accent: "from-amber-500/25 via-orange-400/10 to-rose-500/20",
+    badge: "Samosa scouts"
   },
   {
-    title: "Real-Time Updates",
-    description: "Messages, mentions, and announcements reach you instantly with in-app and Telegram notifications.",
+    title: "Hostel Wi-Fi Legends",
+    description: "Keep chats, clubs, and groups alive even when the hostel Wi-Fi flips a coin.",
     icon: <ShieldCheck className="w-16 h-16" />,
-    color: "text-primary"
+    color: "text-primary",
+    accent: "from-emerald-500/25 via-teal-400/10 to-cyan-500/20",
+    badge: "Night-owl mode"
   },
   {
-    title: "Ready to Start",
-    description: "Create posts, chat with classmates, join groups, and keep up with events without the noise.",
+    title: "Campus Buzz on Loop",
+    description: "Never miss a DDU announcement—pings hit the app and Telegram while you chase credits.",
     icon: <Newspaper className="w-16 h-16" />,
-    color: "text-primary"
+    color: "text-primary",
+    accent: "from-fuchsia-500/20 via-indigo-500/15 to-sky-500/20",
+    badge: "Zero-FOMO club"
   }
 ];
 
@@ -71,10 +81,41 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
 
   return (
     <div className="relative h-full flex flex-col items-center justify-center p-6 text-center">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`glow-${currentSlide}`}
+            className={cn(
+              "absolute -top-24 -left-10 w-80 h-80 rounded-full blur-3xl bg-gradient-to-br",
+              slides[currentSlide].accent
+            )}
+            initial={{ opacity: 0, scale: 0.9, rotate: -6 }}
+            animate={{ opacity: 0.45, scale: 1.05, rotate: 6 }}
+            exit={{ opacity: 0, scale: 0.9, rotate: -6 }}
+            transition={{ duration: 0.8 }}
+          />
+        </AnimatePresence>
+        <motion.div
+          className="absolute -bottom-16 right-0 w-72 h-72 rounded-full bg-primary/10 blur-3xl"
+          animate={{ scale: [1, 1.08, 1], rotate: [0, 4, -4, 0], opacity: [0.25, 0.35, 0.25] }}
+          transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+        />
+      </div>
+
       {/* Theme Toggle Button - Top Right */}
       <div className="absolute top-6 right-6 z-10">
         <ThemeSwitch />
       </div>
+
+      <motion.div
+        className="absolute top-10 left-6 z-10"
+        animate={{ y: [0, -4, 0] }}
+        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <div className="px-4 py-2 rounded-full bg-background/80 border border-border shadow-lg text-sm font-semibold">
+          {slides[currentSlide].badge}
+        </div>
+      </motion.div>
 
       <AnimatePresence mode="wait">
         <motion.div
@@ -87,8 +128,8 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
         >
           <motion.div
             variants={itemVariants}
-            animate={{ y: [0, -15, 0] }}
-            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+            animate={{ y: [0, -15, 0], rotate: [0, 3, -3, 0] }}
+            transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut" }}
             className={cn("p-8 rounded-full bg-muted border border-border", slides[currentSlide].color)}
             whileHover={{ scale: 1.1, rotate: 5 }}
             whileTap={{ scale: 0.9 }}
