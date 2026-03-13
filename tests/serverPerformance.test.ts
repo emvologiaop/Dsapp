@@ -2,7 +2,38 @@ import { describe, it, expect } from 'vitest';
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { createServer } from 'http';
+
+function prepareStaticFixture() {
+  const repoDist = path.join(__dirname, '..', 'dist');
+  const repoIndex = path.join(repoDist, 'index.html');
+  const repoAssets = path.join(repoDist, 'assets');
+
+  if (fs.existsSync(repoIndex) && fs.existsSync(repoAssets)) {
+    const jsFiles = fs.readdirSync(repoAssets).filter((file) => file.endsWith('.js'));
+    if (jsFiles.length > 0) {
+      return { distDir: repoDist, hashedJs: jsFiles[0], cleanup: () => {} };
+    }
+  }
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'static-cache-'));
+  const assetsDir = path.join(tempDir, 'assets');
+  fs.mkdirSync(assetsDir);
+
+  const indexHtml = '<!doctype html><html><head></head><body>ok</body></html>';
+  fs.writeFileSync(path.join(tempDir, 'index.html'), indexHtml);
+
+  const hashedJs = `index-${Date.now().toString(36)}.js`;
+  fs.writeFileSync(path.join(assetsDir, hashedJs), 'console.log("ok");');
+
+  return {
+    distDir: tempDir,
+    hashedJs,
+    cleanup: () => fs.rmSync(tempDir, { recursive: true, force: true }),
+  };
+}
 
 /**
  * Tests verifying the server performance middleware configuration.
@@ -70,7 +101,7 @@ describe('Server Performance Enhancements', () => {
   // ── Static Asset Caching ─────────────────────────────────────────────
   describe('static asset caching', () => {
     it('should set no-cache for HTML and long-lived headers for hashed assets', async () => {
-      const distDir = path.join(__dirname, '..', 'dist');
+      const { distDir, hashedJs, cleanup } = prepareStaticFixture();
       const app = express();
       app.use(
         express.static(distDir, {
@@ -101,7 +132,7 @@ describe('Server Performance Enhancements', () => {
         expect(cacheControl).toContain('no-cache');
 
         // A hashed JS asset should carry immutable + max-age headers
-        const jsRes = await fetch(`${base}/assets/index-Dhb4A2wB.js`);
+        const jsRes = await fetch(`${base}/assets/${hashedJs}`);
         expect(jsRes.ok).toBe(true);
         await jsRes.text();
         const jsCacheControl = jsRes.headers.get('cache-control') ?? '';
@@ -111,6 +142,7 @@ describe('Server Performance Enhancements', () => {
         await new Promise<void>((resolve, reject) =>
           server.close((err) => (err ? reject(err) : resolve()))
         );
+        cleanup();
       }
     });
   });
