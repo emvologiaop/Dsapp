@@ -5,7 +5,7 @@ import { FriendlyCard } from '../FriendlyCard';
 import { getTelegramHandle, getTelegramProfileUrl } from '../../utils/telegram';
 
 interface TelegramAuthProps {
-  onComplete: () => void;
+  onComplete: (userData?: any) => void;
   initialCode?: string;
 }
 
@@ -47,7 +47,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
       }
       
       if (data.verified) {
-        onComplete();
+        onComplete(data.user);
       } else {
         alert(`Verification still pending. Please make sure you've sent the code to ${botHandle}`);
       }
@@ -66,7 +66,7 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
           <Send className="w-10 h-10 text-neon-blue" />
         </div>
         <h2 className="text-3xl font-bold tracking-tighter text-neon-blue">Link Telegram</h2>
-        <p className="text-white/40">Sync your notifications & auth</p>
+        <p className="text-muted-foreground">Telegram linking is required to finish registration and secure your authentication.</p>
       </div>
 
       <FriendlyCard className="w-full space-y-6">
@@ -78,22 +78,22 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
             href={botUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-xs bg-white/5 border border-white/10 px-4 py-2 rounded-full hover:bg-white/10 transition-all"
+            className="inline-flex items-center gap-2 text-xs bg-muted border border-border px-4 py-2 rounded-full hover:bg-muted/80 transition-all"
           >
             Open Bot <ExternalLink size={14} />
           </a>
           
-          <p className="text-sm text-white/60">
-            2. Send this unique code to the bot:
+          <p className="text-sm text-muted-foreground">
+            2. Send this unique code to the bot to verify your account:
           </p>
           
           <div className="relative group">
-            <div className="bg-black/40 border-2 border-dashed border-neon-blue/30 rounded-2xl py-6 text-4xl font-mono tracking-widest text-neon-blue">
+            <div className="bg-muted/60 border-2 border-dashed border-neon-blue/30 rounded-2xl py-6 text-4xl font-mono tracking-widest text-neon-blue">
               {authCode}
             </div>
             <button
               onClick={copyToClipboard}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-all"
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-background/80 border border-border rounded-lg hover:bg-muted transition-all"
             >
               {copied ? <ShieldCheck className="text-emerald-400" size={20} /> : <Copy size={20} />}
             </button>
@@ -118,8 +118,8 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
         </div>
       </FriendlyCard>
 
-      <p className="mt-8 text-xs text-white/30 max-w-xs">
-        Linking Telegram allows you to receive real-time DM alerts and recover your account securely.
+      <p className="mt-8 text-xs text-muted-foreground max-w-xs">
+        This Telegram step is mandatory for secure sign-in, account recovery, and optional real-time notification delivery.
       </p>
     </div>
   );

@@ -13,9 +13,25 @@ export interface IUser extends Document {
   website?: string;
   location?: string;
   isVerified?: boolean;
+  badgeType?: 'none' | 'blue' | 'gold';
+  verificationStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+  verificationRealName?: string;
+  verificationPhotoUrl?: string;
+  verificationNote?: string;
+  verificationRequestedAt?: Date;
+  verificationReviewedAt?: Date;
+  verificationReviewedBy?: mongoose.Types.ObjectId;
   telegramChatId?: string;
   telegramAuthCode?: string;
   telegramNotificationsEnabled?: boolean;
+  notificationSettings?: {
+    messages?: boolean;
+    comments?: boolean;
+    likes?: boolean;
+    follows?: boolean;
+    mentions?: boolean;
+    shares?: boolean;
+  };
   followingIds: mongoose.Types.ObjectId[];
   followerIds: mongoose.Types.ObjectId[];
   role: 'user' | 'admin';
@@ -42,9 +58,25 @@ const UserSchema = new Schema<IUser>(
     website: { type: String },
     location: { type: String },
     isVerified: { type: Boolean, default: false },
+    badgeType: { type: String, enum: ['none', 'blue', 'gold'], default: 'none' },
+    verificationStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
+    verificationRealName: { type: String },
+    verificationPhotoUrl: { type: String },
+    verificationNote: { type: String },
+    verificationRequestedAt: { type: Date },
+    verificationReviewedAt: { type: Date },
+    verificationReviewedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     telegramChatId: { type: String },
     telegramAuthCode: { type: String },
     telegramNotificationsEnabled: { type: Boolean, default: false },
+    notificationSettings: {
+      messages: { type: Boolean, default: true },
+      comments: { type: Boolean, default: true },
+      likes: { type: Boolean, default: true },
+      follows: { type: Boolean, default: true },
+      mentions: { type: Boolean, default: true },
+      shares: { type: Boolean, default: true },
+    },
     followingIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     followerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
@@ -62,6 +94,7 @@ UserSchema.index({ email: 1 }); // Already unique, but explicit for lookups
 UserSchema.index({ telegramChatId: 1 }); // For Telegram bot integration
 UserSchema.index({ role: 1 }); // For admin queries
 UserSchema.index({ isBanned: 1 }); // For filtering banned users
+UserSchema.index({ verificationStatus: 1 }); // For pending verification queries
 UserSchema.index({ createdAt: -1 }); // For sorting by registration date
 
 export const User = mongoose.model<IUser>('User', UserSchema);
