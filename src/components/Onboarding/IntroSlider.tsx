@@ -13,26 +13,26 @@ interface Slide {
 
 const slides: Slide[] = [
   {
-    title: "Welcome to the Chaos",
-    description: "DDU Social: Where procrastination meets productivity, and your WiFi signal is stronger than your GPA. Share posts, create reels, stalk your crush, and pretend you're studying – all in one place. Because who needs sleep when you have infinite scroll?",
+    title: "Stay Connected",
+    description: "Share updates, photos, and announcements with your campus community in one place.",
     icon: <Zap className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "Unleash Your Inner Demons",
-    description: "Post anonymously like a coward or flex with your real name. Upload that blurry 2 AM cafeteria photo, create chaotic reels, get roasted in comments, and collect hollow internet validation. Fame is temporary, but digital footprints are forever.",
+    title: "Choose Your Presence",
+    description: "Post with your name or switch to ghost mode when you need extra privacy.",
     icon: <Share2 className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "The Surveillance Hub",
-    description: "Real-time notifications so you never miss drama, read receipts to haunt people who ignore you, and typing indicators to anxiously watch someone craft the perfect response. Plus Telegram integration, because one social platform isn't enough to ruin your attention span.",
+    title: "Real-Time Updates",
+    description: "Messages, mentions, and announcements reach you instantly with in-app and Telegram notifications.",
     icon: <ShieldCheck className="w-16 h-16" />,
     color: "text-primary"
   },
   {
-    title: "Your New Addiction",
-    description: "Instant messaging faster than your response to actual responsibilities. Get notified about things that don't matter, vote on features nobody asked for, and stay connected to campus gossip 24/7. Welcome to your productivity's worst nightmare!",
+    title: "Ready to Start",
+    description: "Create posts, chat with classmates, join groups, and keep up with events without the noise.",
     icon: <Newspaper className="w-16 h-16" />,
     color: "text-primary"
   }
