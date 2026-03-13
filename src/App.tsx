@@ -28,6 +28,7 @@ export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
+  const [homeFeedTab, setHomeFeedTab] = useState<'feed' | 'ghost'>('feed');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -41,6 +42,9 @@ export default function App() {
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
+  const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
+  const [showStoryUpload, setShowStoryUpload] = useState(false);
 
   // Stable refs to avoid stale closures in socket effects
   const fetchChatsRef = useRef<(() => void) | null>(null);
@@ -96,11 +100,12 @@ export default function App() {
   useEffect(() => {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
+      fetchStories();
     }
     if (isOnboarded && activeTab === 'chat') {
       fetchChats();
     }
-  }, [isOnboarded, activeTab]);
+  }, [isOnboarded, activeTab, user?.id]);
 
   // Join the user's socket room at app level so notifications and messages
   // are received even outside of ChatRoom
@@ -143,8 +148,10 @@ export default function App() {
   }, [fetchChats]);
 
   const fetchPosts = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/posts?userId=${user?.id}`);
+      const response = await fetch(`/api/posts?userId=${user.id}`);
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -155,6 +162,22 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error fetching posts:", error);
+    }
+  };
+
+  const fetchStories = async () => {
+    if (!user?.id) return;
+
+    try {
+      const response = await fetch(`/api/stories?userId=${user.id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch stories');
+      }
+
+      const data = await response.json();
+      setStoryGroups(sortStoryGroups(data, user.id));
+    } catch (error) {
+      console.error('Error fetching stories:', error);
     }
   };
 
@@ -190,6 +213,14 @@ export default function App() {
     }
   };
 
+  const ghostModeEligible = !user?.createdAt || canUseGhostMode(user.createdAt);
+  const ghostModeDisabled = !!user?.createdAt && !ghostModeEligible;
+
+  const toggleGhostMode = () => {
+    if (ghostModeDisabled) return;
+    setIsAnonymous(!isAnonymous);
+  };
+
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
   }
@@ -212,6 +243,23 @@ export default function App() {
   if (showAdminDashboard) {
     return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
+
+  const sortedStoryGroups = user?.id ? sortStoryGroups(storyGroups, user.id) : storyGroups;
+  const ownStoryGroup = sortedStoryGroups.find((group) => group.user._id === user?.id);
+  const storyTrayGroups = ownStoryGroup
+    ? sortedStoryGroups
+    : user
+      ? [{
+          user: {
+            _id: user.id,
+            name: user.name,
+            username: user.username,
+            avatarUrl: user.avatarUrl
+          },
+          stories: [],
+          hasViewed: false
+        }, ...sortedStoryGroups]
+      : sortedStoryGroups;
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-24">
@@ -237,11 +285,13 @@ export default function App() {
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
           <button
-            onClick={() => setIsAnonymous(!isAnonymous)}
+            onClick={toggleGhostMode}
             className={cn(
-              "p-2 rounded-full transition-all",
+              "p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
               isAnonymous ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             )}
+            disabled={ghostModeDisabled}
+            title={ghostModeDisabled ? `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days` : 'Ghost mode'}
           >
             <Ghost size={20} />
           </button>
@@ -267,13 +317,69 @@ export default function App() {
         {activeTab === 'home' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Feed</h2>
-              <button 
-                onClick={() => setShowCreatePost(!showCreatePost)}
-                className="p-2 bg-primary text-primary-foreground rounded-lg"
-              >
-                <Plus size={20} />
-              </button>
+              <div>
+                <h2 className="text-xl font-bold">Feed</h2>
+                <p className="text-sm text-muted-foreground">{STORY_LIFETIME_TEXT}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowStoryUpload(true)}
+                  className="p-2 rounded-full border border-border bg-background hover:bg-muted transition-colors"
+                  aria-label="Add story"
+                >
+                  <Plus size={20} />
+                </button>
+                <button 
+                  onClick={() => setShowCreatePost(!showCreatePost)}
+                  className="p-2 bg-primary text-primary-foreground rounded-full"
+                  aria-label="Create post"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className="border-y border-border/70 bg-background -mx-6 px-6 py-4">
+              <div className="flex gap-4 overflow-x-auto pb-1">
+                {storyTrayGroups.map((group) => {
+                  const hasActiveStory = group.stories.length > 0;
+                  const latestStory = group.stories[0];
+                  const isOwnStory = group.user._id === user?.id;
+
+                  return (
+                    <button
+                      key={group.user._id}
+                      type="button"
+                      onClick={() => {
+                        if (!hasActiveStory && isOwnStory) {
+                          setShowStoryUpload(true);
+                          return;
+                        }
+
+                        if (hasActiveStory) {
+                          setActiveStoryGroup({
+                            ...group,
+                            stories: orderStoriesForViewer(group.stories)
+                          });
+                        }
+                      }}
+                      className="flex shrink-0 flex-col items-center gap-2 bg-transparent"
+                    >
+                      <StoryRing
+                        hasActiveStory={hasActiveStory}
+                        hasViewedAll={group.hasViewed}
+                        avatarUrl={group.user.avatarUrl}
+                        name={group.user.name}
+                        username={group.user._id === user?.id ? 'Your story' : group.user.username}
+                        isOwnStory={isOwnStory}
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        {hasActiveStory ? getStoryTimeRemaining(latestStory.expiresAt) : 'Add story'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {showCreatePost && (
@@ -282,50 +388,61 @@ export default function App() {
                 isAnonymous={isAnonymous} 
                 onPostCreated={() => {
                   setShowCreatePost(false);
-                  fetchPosts();
+                  const nextScope = isAnonymous ? 'ghost' : 'feed';
+                  setHomeFeedTab(nextScope);
+                  fetchPosts(nextScope);
                 }} 
               />
             )}
             
-            {posts.length > 0 ? posts.map((post) => (
-              <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
-                <div className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
+            {posts.length > 0 ? posts.map((post) => {
+              const postDisplayName = post.isAnonymous ? 'Ghost' : (post.userId?.username || post.userId?.name || 'User');
+
+              return (
+                <article key={post._id} className="bg-background border-y border-border/70 -mx-6 overflow-hidden">
+                  <div className="px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                        {post.isAnonymous ? (
+                          <Ghost size={18} className="text-muted-foreground" />
+                        ) : post.userId?.avatarUrl ? (
+                          <img src={post.userId.avatarUrl} alt={post.userId?.name || 'User'} className="w-full h-full object-cover" />
+                        ) : (
+                          post.userId?.name?.[0] || 'U'
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold">{postDisplayName}</p>
+                        <p className="text-[11px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
-                      <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
+                    <div className="flex items-center gap-2">
+                      {!post.isAnonymous && user && post.userId?._id !== user.id && (
+                        <FollowButton
+                          userId={user.id}
+                          targetId={post.userId._id}
+                          initialIsFollowing={post.isFollowing}
+                        />
+                      )}
+                      {!post.isAnonymous && (
+                        <PostOptions
+                          postId={post._id}
+                          userId={user?.id}
+                          postOwnerId={post.userId?._id}
+                          initialContent={post.content}
+                          initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
+                          onDelete={() => {
+                            setPosts(posts.filter(p => p._id !== post._id));
+                          }}
+                          onEdit={(content, mediaUrls) => {
+                            setPosts(posts.map(p =>
+                              p._id === post._id ? { ...p, content, mediaUrls } : p
+                            ));
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!post.isAnonymous && user && post.userId?._id !== user.id && (
-                      <FollowButton
-                        userId={user.id}
-                        targetId={post.userId._id}
-                        initialIsFollowing={post.isFollowing}
-                      />
-                    )}
-                    {!post.isAnonymous && (
-                      <PostOptions
-                        postId={post._id}
-                        userId={user?.id}
-                        postOwnerId={post.userId?._id}
-                        initialContent={post.content}
-                        initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
-                        onDelete={() => {
-                          setPosts(posts.filter(p => p._id !== post._id));
-                        }}
-                        onEdit={(content, mediaUrls) => {
-                          setPosts(posts.map(p =>
-                            p._id === post._id ? { ...p, content, mediaUrls } : p
-                          ));
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
@@ -337,10 +454,13 @@ export default function App() {
                     onLike={() => handleDoubleTapLike(post._id)}
                   />
                 ) : null}
-                <div className="p-4 space-y-2">
-                  <p className="text-sm text-foreground leading-relaxed">
-                    {post.content}
-                  </p>
+                <div className="px-6 py-4 space-y-3">
+                  {post.content && (
+                    <p className="text-sm text-foreground leading-relaxed">
+                      <span className="font-semibold mr-2">{postDisplayName}</span>
+                      {post.content}
+                    </p>
+                  )}
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -351,11 +471,14 @@ export default function App() {
                     initialShares={post.sharesCount}
                     onComment={() => setCommentPostId(post._id)}
                   />
-                </div>
-              </FriendlyCard>
-            )) : (
+                  </div>
+                </article>
+            )}) : (
               <div className="text-center py-20 text-muted-foreground">
-                <p>No posts yet. Be the first!</p>
+                <p>{homeFeedTab === 'ghost' ? 'No ghost posts yet.' : 'No posts yet. Be the first!'}</p>
+                {homeFeedTab === 'ghost' && (
+                  <p className="text-sm mt-2">Anonymous posts live here so the main feed stays identity-first.</p>
+                )}
               </div>
             )}
           </div>
@@ -470,17 +593,26 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setIsAnonymous(!isAnonymous)}
+                    onClick={toggleGhostMode}
                     className={cn(
-                      "w-12 h-6 rounded-full relative transition-all",
+                      "w-12 h-6 rounded-full relative transition-all disabled:opacity-50 disabled:cursor-not-allowed",
                       isAnonymous ? "bg-accent" : "bg-black/10"
                     )}
+                    disabled={ghostModeDisabled}
                   >
                     <div className={cn(
                       "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
                       isAnonymous ? "right-1" : "left-1"
                     )} />
                   </button>
+                </div>
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg border border-border">
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li>Ghost posts are anonymous to other users, but moderators can still trace reported posts internally.</li>
+                    <li>Ghost mode unlocks after {GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.</li>
+                    <li>You can only make 1 ghost post every {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+                    <li>Comments always use your real profile.</li>
+                  </ul>
                 </div>
               </FriendlyCard>
             </div>
@@ -557,7 +689,7 @@ export default function App() {
         <CommentsPanel
           postId={commentPostId}
           userId={user.id}
-          isAnonymous={isAnonymous}
+          isAnonymous={false}
           onClose={() => setCommentPostId(null)}
         />
       )}
@@ -573,6 +705,27 @@ export default function App() {
 
       {showSearch && (
         <SearchPanel onClose={() => setShowSearch(false)} />
+      )}
+
+      {activeStoryGroup && user && (
+        <StoryViewer
+          stories={activeStoryGroup.stories}
+          currentUserId={user.id}
+          onClose={() => {
+            setActiveStoryGroup(null);
+            fetchStories();
+          }}
+        />
+      )}
+
+      {showStoryUpload && user && (
+        <StoryUpload
+          userId={user.id}
+          onClose={() => setShowStoryUpload(false)}
+          onUploadSuccess={() => {
+            fetchStories();
+          }}
+        />
       )}
 
         {/* Bottom Nav */}

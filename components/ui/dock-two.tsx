@@ -19,18 +19,6 @@ interface DockIconButtonProps {
   className?: string
 }
 
-const floatingAnimation = {
-  initial: { y: 0 },
-  animate: {
-    y: [-2, 2, -2],
-    transition: {
-      duration: 4,
-      repeat: Infinity,
-      ease: "easeInOut"
-    }
-  }
-}
-
 const DockIconButton = React.forwardRef<HTMLButtonElement, DockIconButtonProps>(
   ({ icon: Icon, label, onClick, className }, ref) => {
     return (
@@ -64,17 +52,20 @@ DockIconButton.displayName = "DockIconButton"
 const Dock = React.forwardRef<HTMLDivElement, DockProps>(
   ({ items, className }, ref) => {
     return (
-      <div ref={ref} className={cn("w-full h-64 flex items-center justify-center p-2", className)}>
-        <div className="w-full max-w-4xl h-64 rounded-2xl flex items-center justify-center relative">
+      <div
+        ref={ref}
+        className={cn(
+          "w-full flex justify-center px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]",
+          className
+        )}
+      >
+        <div className="w-full max-w-md flex justify-center relative">
           <motion.div
-            initial="initial"
-            animate="animate"
-            variants={floatingAnimation}
             className={cn(
-              "flex items-center gap-1 p-2 rounded-2xl",
+              "flex w-full items-center justify-around gap-1 p-2 rounded-2xl",
               "backdrop-blur-lg border shadow-lg",
               "bg-background/90 border-border",
-              "hover:shadow-xl transition-shadow duration-300"
+              "transition-shadow duration-300 sm:w-auto sm:justify-center"
             )}
           >
             {items.map((item) => (
