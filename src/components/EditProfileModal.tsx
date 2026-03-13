@@ -252,7 +252,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-140px)]">
+            <form id="edit-profile-form" onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-140px)]">
               <div className="px-6 py-6 space-y-6">
                 {/* Profile Picture */}
                 <div className="flex items-center gap-6">
@@ -309,21 +309,22 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       Your unique DDU Social handle
                     </p>
                   </div>
+                </div>
 
-                {/* Username */}
+                {/* Name */}
                 <div>
-                  <label className="block text-sm font-semibold mb-2">Username</label>
+                  <label className="block text-sm font-semibold mb-2">Name</label>
                   <input
                     type="text"
-                    name="username"
-                    value={formData.username}
+                    name="name"
+                    value={formData.name}
                     onChange={handleChange}
                     className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                    placeholder="username"
+                    placeholder="Your full name"
                     required
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Lowercase letters, numbers, underscores & periods only
+                    Your display name
                   </p>
                 </div>
 
@@ -372,39 +373,40 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     </div>
                   )}
                 </div>
-
-                {/* Footer */}
-                <div className="px-6 py-4 border-t border-border flex gap-3">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="flex-1 px-6 py-2.5 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-lg transition-all"
-                    disabled={isLoading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className={cn(
-                      "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
-                      isLoading && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save'
-                    )}
-                  </button>
-                </div>
               </form>
-            ) : (
-              /* Verification Section */
-              <div className="overflow-y-auto max-h-[calc(90vh-180px)]">
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-border flex gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 px-6 py-2.5 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-lg transition-all"
+                  disabled={isLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="edit-profile-form"
+                  disabled={isLoading}
+                  className={cn(
+                    "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
+                    isLoading && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </button>
+              </div>
+
+            {/* Verification Section */}
+            <div className="overflow-y-auto max-h-[calc(90vh-180px)]">
                 <div className="px-6 py-6 space-y-5">
                   <div>
                     <h3 className="text-base font-bold mb-1">Request Verification</h3>
@@ -493,7 +495,6 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   )}
                 </div>
               </div>
-            )}
           </FriendlyCard>
         </motion.div>
       </div>
