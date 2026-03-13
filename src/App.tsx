@@ -29,6 +29,7 @@ export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
+  const [homeFeedTab, setHomeFeedTab] = useState<'feed' | 'ghost'>('feed');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -99,11 +100,12 @@ export default function App() {
   useEffect(() => {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
+      fetchStories();
     }
     if (isOnboarded && activeTab === 'chat') {
       fetchChats();
     }
-  }, [isOnboarded, activeTab]);
+  }, [isOnboarded, activeTab, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -130,8 +132,10 @@ export default function App() {
   }, [joinedGroups, user?.id]);
 
   const fetchChats = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/users/${user?.id}/chats`);
+      const response = await fetch(`/api/users/${user.id}/chats`);
       if (response.ok) {
         const data = await response.json();
         setChats(data);
@@ -140,10 +144,12 @@ export default function App() {
       console.error("Error fetching chats:", error);
     }
   };
-
+          
   const fetchPosts = async () => {
+    if (!user?.id) return;
+
     try {
-      const response = await fetch(`/api/posts?userId=${user?.id}`);
+      const response = await fetch(`/api/posts?userId=${user.id}`);
       const contentType = response.headers.get("content-type");
       if (contentType && contentType.indexOf("application/json") !== -1) {
         const data = await response.json();
@@ -154,6 +160,22 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error fetching posts:", error);
+    }
+  };
+
+  const fetchStories = async () => {
+    if (!user?.id) return;
+
+    try {
+      const response = await fetch(`/api/stories?userId=${user.id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch stories');
+      }
+
+      const data = await response.json();
+      setStoryGroups(sortStoryGroups(data, user.id));
+    } catch (error) {
+      console.error('Error fetching stories:', error);
     }
   };
 
@@ -294,6 +316,23 @@ export default function App() {
     return <AdminDashboard userId={user?.id} onClose={() => setShowAdminDashboard(false)} />;
   }
 
+  const sortedStoryGroups = user?.id ? sortStoryGroups(storyGroups, user.id) : storyGroups;
+  const ownStoryGroup = sortedStoryGroups.find((group) => group.user._id === user?.id);
+  const storyTrayGroups = ownStoryGroup
+    ? sortedStoryGroups
+    : user
+      ? [{
+          user: {
+            _id: user.id,
+            name: user.name,
+            username: user.username,
+            avatarUrl: user.avatarUrl
+          },
+          stories: [],
+          hasViewed: false
+        }, ...sortedStoryGroups]
+      : sortedStoryGroups;
+
   return (
     <div className="min-h-screen bg-background text-foreground pb-24">
       {/* Header */}
@@ -318,11 +357,13 @@ export default function App() {
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
           <button
-            onClick={() => setIsAnonymous(!isAnonymous)}
+            onClick={toggleGhostMode}
             className={cn(
-              "p-2 rounded-full transition-all",
+              "p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
               isAnonymous ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             )}
+            disabled={ghostModeDisabled}
+            title={ghostModeDisabled ? `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days` : 'Ghost mode'}
           >
             <Ghost size={20} />
           </button>
@@ -566,33 +607,6 @@ export default function App() {
                       <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {!post.isAnonymous && user && post.userId?._id !== user.id && (
-                      <FollowButton
-                        userId={user.id}
-                        targetId={post.userId._id}
-                        initialIsFollowing={post.isFollowing}
-                      />
-                    )}
-                    {!post.isAnonymous && (
-                      <PostOptions
-                        postId={post._id}
-                        userId={user?.id}
-                        postOwnerId={post.userId?._id}
-                        initialContent={post.content}
-                        initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
-                        onDelete={() => {
-                          setPosts(posts.filter(p => p._id !== post._id));
-                        }}
-                        onEdit={(content, mediaUrls) => {
-                          setPosts(posts.map(p =>
-                            p._id === post._id ? { ...p, content, mediaUrls } : p
-                          ));
-                        }}
-                      />
-                    )}
-                  </div>
-                </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
@@ -765,17 +779,26 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setIsAnonymous(!isAnonymous)}
+                    onClick={toggleGhostMode}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
                       isAnonymous ? "bg-accent" : "bg-muted"
                     )}
+                    disabled={ghostModeDisabled}
                   >
                     <div className={cn(
                       "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
                       isAnonymous ? "right-1" : "left-1"
                     )} />
                   </button>
+                </div>
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg border border-border">
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li>Ghost posts are anonymous to other users, but moderators can still trace reported posts internally.</li>
+                    <li>Ghost mode unlocks after {GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.</li>
+                    <li>You can only make 1 ghost post every {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+                    <li>Comments always use your real profile.</li>
+                  </ul>
                 </div>
               </FriendlyCard>
             </div>
@@ -894,7 +917,7 @@ export default function App() {
         <CommentsPanel
           postId={commentPostId}
           userId={user.id}
-          isAnonymous={isAnonymous}
+          isAnonymous={false}
           onClose={() => setCommentPostId(null)}
         />
       )}
@@ -910,6 +933,27 @@ export default function App() {
 
       {showSearch && (
         <SearchPanel onClose={() => setShowSearch(false)} />
+      )}
+
+      {activeStoryGroup && user && (
+        <StoryViewer
+          stories={activeStoryGroup.stories}
+          currentUserId={user.id}
+          onClose={() => {
+            setActiveStoryGroup(null);
+            fetchStories();
+          }}
+        />
+      )}
+
+      {showStoryUpload && user && (
+        <StoryUpload
+          userId={user.id}
+          onClose={() => setShowStoryUpload(false)}
+          onUploadSuccess={() => {
+            fetchStories();
+          }}
+        />
       )}
 
         {/* Bottom Nav */}

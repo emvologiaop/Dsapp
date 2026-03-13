@@ -104,7 +104,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, postId,
             initial={{ opacity: 0, y: 100, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 100, scale: 0.95 }}
-            className="fixed bottom-0 left-0 right-0 md:top-1/2 md:left-1/2 md:right-auto md:bottom-auto md:-translate-x-1/2 md:-translate-y-1/2 bg-background md:rounded-2xl rounded-t-2xl z-50 w-full md:w-[400px] max-h-[80vh] flex flex-col shadow-2xl overflow-hidden border border-border"
+            className="fixed inset-0 bg-background z-50 w-full flex flex-col shadow-2xl overflow-hidden md:inset-auto md:top-1/2 md:left-1/2 md:right-auto md:bottom-auto md:w-[400px] md:max-h-[80vh] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:border md:border-border"
           >
             <div className="p-4 border-b border-border flex items-center justify-between bg-muted/30">
               <h3 className="font-bold text-lg">Share with friends</h3>

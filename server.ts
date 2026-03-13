@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -7,9 +8,10 @@ import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import { connectDB } from './src/db.js';
 import { initBot } from './bot/index.js';
-import { User } from './src/models/User.js';
+import { User, type IUser } from './src/models/User.js';
 import { Post } from './src/models/Post.js';
 import { Message } from './src/models/Message.js';
 import { Notification } from './src/models/Notification.js';
@@ -26,6 +28,12 @@ import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
+import {
+  canUseGhostMode,
+  GHOST_MODE_MIN_ACCOUNT_AGE_DAYS,
+  GHOST_POST_RATE_LIMIT_HOURS,
+  stripMentionsFromGhostContent,
+} from './src/utils/ghostPolicy.js';
 
 dotenv.config();
 
@@ -43,12 +51,30 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
+// Enable gzip/deflate compression for all HTTP responses
+app.use(compression());
+
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '100kb' }));
 // Use higher limit only for upload endpoints
 app.use('/api/posts', express.json({ limit: '50mb' }));
 app.use('/api/reels', express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve static assets with long-term caching for fingerprinted files
+app.use(
+  express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1y',
+    immutable: true,
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      // index.html must not be cached so the browser always gets the latest entry point
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  })
+);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -61,7 +87,10 @@ app.use(limiter);
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
   try {
-    await connectDB();
+    // Skip connectDB() when Mongoose is already connected (readyState 1)
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
     next();
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
@@ -144,6 +173,26 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
       else resolve(crypto.timingSafeEqual(Buffer.from(hash, 'hex'), derivedKey));
     });
   });
+}
+
+type AuthUserFields = Pick<
+  IUser,
+  '_id' | 'name' | 'username' | 'email' | 'department' | 'telegramAuthCode' | 'telegramChatId' | 'telegramNotificationsEnabled' | 'role' | 'createdAt'
+>;
+
+function serializeAuthUser(user: AuthUserFields) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    department: user.department,
+    telegramAuthCode: user.telegramAuthCode,
+    telegramChatId: user.telegramChatId,
+    telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+    role: user.role,
+    createdAt: user.createdAt,
+  };
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
@@ -463,7 +512,8 @@ app.post('/api/posts', async (req, res) => {
     const approvalStatus = normalizedContentType === 'event' && author.role !== 'admin' ? 'pending' : 'approved';
 
     // Extract mentions from content
-    const mentions = extractMentions(content);
+    const mentions = creatingGhostPost ? [] : extractMentions(normalizedContent);
+    const normalizedTaggedUsers = creatingGhostPost ? [] : (taggedUsers || []);
 
     const post = await Post.create({
       userId,
@@ -481,6 +531,10 @@ app.post('/api/posts', async (req, res) => {
       mentions
     });
 
+    if (creatingGhostPost) {
+      await User.findByIdAndUpdate(userId, { $addToSet: { postsAsGhost: post._id } });
+    }
+
     // Send mention notifications
     if (approvalStatus === 'approved' && mentions.length > 0 && !post.isAnonymous) {
       await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
@@ -495,7 +549,7 @@ app.post('/api/posts', async (req, res) => {
           const tagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
             userId: taggedUserId,
             type: 'tag',
-            content: `${tagger.name} tagged you in a post`,
+            content: `${author.name} tagged you in a post`,
             relatedUserId: userId,
             relatedPostId: post._id,
           }));
@@ -636,7 +690,10 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
-    const comment = await Comment.create({ postId, userId, content, isAnonymous: Boolean(isAnonymous) });
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
+    const comment = await Comment.create({ postId, userId, content, isAnonymous: false });
     await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
     const populated = await Comment.findById(comment._id).populate('userId', 'name username avatarUrl').lean();
 
@@ -687,6 +744,9 @@ app.post('/api/comments/:commentId/reply', async (req, res) => {
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
 
     const parentComment = await Comment.findById(commentId);
     if (!parentComment) {
@@ -697,7 +757,7 @@ app.post('/api/comments/:commentId/reply', async (req, res) => {
       postId: parentComment.postId,
       userId,
       content,
-      isAnonymous: Boolean(isAnonymous),
+      isAnonymous: false,
       parentCommentId: commentId
     });
 
@@ -1319,12 +1379,15 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
     if (!userId || !text) {
       return res.status(400).json({ error: 'userId and text are required' });
     }
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
 
     const comment = await Comment.create({
       postId: reelId,
       userId,
       content: text,
-      isAnonymous: Boolean(isAnonymous),
+      isAnonymous: false,
     });
 
     await Reel.findByIdAndUpdate(reelId, { $inc: { commentsCount: 1 } });
@@ -1698,13 +1761,14 @@ app.get('/api/stories', async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    const user = await User.findById(userId).lean();
+    const currentUserId = userId.toString();
+    const user = await User.findById(currentUserId).lean();
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Get stories from followed users + own stories
-    const followedIds = [...user.followingIds, userId];
+    const followedIds = [...user.followingIds, currentUserId];
     const now = new Date();
 
     const stories = await Story.find({
@@ -1718,20 +1782,20 @@ app.get('/api/stories', async (req, res) => {
 
     // Group stories by user
     const storiesByUser = stories.reduce((acc: any, story: any) => {
-      const userId = story.userId._id.toString();
-      if (!acc[userId]) {
-        acc[userId] = {
+      const storyOwnerId = story.userId._id.toString();
+      if (!acc[storyOwnerId]) {
+        acc[storyOwnerId] = {
           user: story.userId,
           stories: [],
           hasViewed: false
         };
       }
-      acc[userId].stories.push(story);
+      acc[storyOwnerId].stories.push(story);
       // Check if current user has viewed all stories from this user
-      const hasViewedAll = acc[userId].stories.every((s: any) =>
-        s.views.some((v: any) => v.toString() === userId)
+      const hasViewedAll = acc[storyOwnerId].stories.every((s: any) =>
+        s.views.some((v: any) => v.toString() === currentUserId)
       );
-      acc[userId].hasViewed = hasViewedAll;
+      acc[storyOwnerId].hasViewed = hasViewedAll;
       return acc;
     }, {});
 

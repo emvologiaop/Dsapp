@@ -4,6 +4,7 @@ import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, Ar
 import { FriendlyCard } from '../FriendlyCard';
 import { Input } from '../ui/Input';
 import { cn } from '../../lib/utils';
+import { TermsOfServiceModal } from '../TermsOfServiceModal';
 
 interface SignupFormProps {
   onComplete: (data: any) => void;
@@ -23,6 +24,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showTerms, setShowTerms] = useState(false);
 
   const validateStep = () => {
     const newErrors: Record<string, string> = {};
@@ -274,6 +276,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
           </button>
         </p>
       )}
+      {showTerms && <TermsOfServiceModal onClose={() => setShowTerms(false)} />}
     </div>
   );
 };

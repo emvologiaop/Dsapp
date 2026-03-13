@@ -176,6 +176,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({
       }
 
       // Create post with R2 URLs or base64 previews
+      const normalizedContent = isAnonymous ? stripMentionsFromGhostContent(content).trim() : content;
       const response = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -209,11 +210,12 @@ export const CreatePost: React.FC<CreatePostProps> = ({
         }
         onPostCreated(createdPost);
       } else {
-        throw new Error('Post failed');
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Post failed');
       }
     } catch (error) {
       console.error("Post error:", error);
-      alert('Failed to create post. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to create post. Please try again.');
     } finally {
       setIsPosting(false);
       setUploadProgress(0);
@@ -326,6 +328,27 @@ export const CreatePost: React.FC<CreatePostProps> = ({
           />
         </div>
       </div>
+
+      {isAnonymous && (
+        <div className={cn(
+          'rounded-xl border p-3 text-xs',
+          ghostModeLocked ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-border bg-muted/50 text-muted-foreground'
+        )}>
+          {ghostModeLocked ? (
+            <ul className="space-y-1 list-disc pl-4">
+              <li>Ghost mode unlocks after {GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.</li>
+              <li>Once unlocked, ghost posts are limited to 1 per {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+            </ul>
+          ) : (
+            <ul className="space-y-1 list-disc pl-4">
+              <li>Ghost posts go to the Ghost Board.</li>
+              <li>@mentions are stripped from ghost posts.</li>
+              <li>Moderators can still trace reported ghost posts.</li>
+              <li>You can only make 1 ghost post every {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+            </ul>
+          )}
+        </div>
+      )}
 
       {imagePreviews.length > 0 && (
         <div className="flex gap-2 flex-wrap">
