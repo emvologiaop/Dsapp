@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog, Sparkles, Users, CalendarDays, GraduationCap } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog, Sparkles, Users, CalendarDays, GraduationCap, Copy, RefreshCw, ExternalLink } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -31,6 +31,7 @@ import { NotificationSettings, DEFAULT_NOTIFICATION_SETTINGS, normalizeNotificat
 import { CommunitySection, COMMUNITY_GROUPS, getGroupName, normalizeContentType, getVisibleCommunityPosts } from './utils/community';
 import { sortStoryGroups, StoryGroup } from './utils/stories';
 import { GHOST_MODE_MIN_ACCOUNT_AGE_DAYS, canUseGhostMode } from './utils/ghostPolicy';
+import { getTelegramHandle, getTelegramProfileUrl } from './utils/telegram';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -60,6 +61,11 @@ export default function App() {
   const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
   const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
   const [showStoryUpload, setShowStoryUpload] = useState(false);
+  const [telegramAuthCode, setTelegramAuthCode] = useState('');
+  const [refreshingTelegramCode, setRefreshingTelegramCode] = useState(false);
+  const [verifyingTelegram, setVerifyingTelegram] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<string | null>(null);
+  const [copiedTelegramCode, setCopiedTelegramCode] = useState(false);
 
   // Stable refs to avoid stale closures in socket effects
   const fetchChatsRef = useRef<(() => void) | null>(null);
@@ -68,6 +74,8 @@ export default function App() {
   // Computed values
   const ghostModeDisabled = !canUseGhostMode(user?.createdAt);
   const visiblePosts = getVisibleCommunityPosts(posts, homeSection, selectedGroupId, joinedGroups);
+  const botHandle = getTelegramHandle(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
+  const botUrl = getTelegramProfileUrl(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
 
   // Notification settings labels for the UI
   const notificationSettingLabels = [
@@ -95,17 +103,99 @@ export default function App() {
     });
   };
 
-  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
-    if (!telegramNotificationsEnabled) return;
+  const refreshTelegramAuthCode = useCallback(async (forceNew = false) => {
+    if (!user?.id || user.telegramChatId) return;
 
+    if (user.telegramAuthCode && !forceNew) {
+      setTelegramAuthCode(user.telegramAuthCode);
+      return;
+    }
+
+    setRefreshingTelegramCode(true);
+    try {
+      const response = await fetch('/api/auth/telegram-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTelegramAuthCode(data.telegramAuthCode);
+        const updatedUser = { ...user, telegramAuthCode: data.telegramAuthCode, telegramChatId: undefined };
+        setUser(updatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+        setTelegramStatus('New Telegram code generated. Send it to the bot to link your account.');
+      } else {
+        const errorText = await response.text();
+        setTelegramStatus(errorText || 'Unable to refresh Telegram code right now.');
+      }
+    } catch (error) {
+      console.error('Failed to refresh Telegram auth code:', error);
+      setTelegramStatus('Unable to refresh Telegram code right now.');
+    } finally {
+      setRefreshingTelegramCode(false);
+    }
+  }, [user]);
+
+  const handleCopyTelegramCode = async () => {
+    if (!telegramAuthCode) return;
+    try {
+      await navigator.clipboard.writeText(telegramAuthCode);
+      setCopiedTelegramCode(true);
+      setTimeout(() => setCopiedTelegramCode(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy Telegram code:', error);
+    }
+  };
+
+  const verifyTelegramLink = async () => {
+    if (!telegramAuthCode) return;
+    setVerifyingTelegram(true);
+    setTelegramStatus(null);
+
+    try {
+      const response = await fetch(`/api/auth/verify-telegram/${telegramAuthCode}`);
+      const data = await response.json();
+
+      if (data?.verified && data.user) {
+        const normalizedUser = {
+          ...data.user,
+          notificationSettings: normalizeNotificationSettings(data.user.notificationSettings),
+        };
+        setUser(normalizedUser);
+        setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
+        setNotificationSettings(normalizedUser.notificationSettings);
+        setTelegramAuthCode(normalizedUser.telegramAuthCode || telegramAuthCode);
+        localStorage.setItem('ddu_user', JSON.stringify(normalizedUser));
+        setTelegramStatus('Telegram connected successfully.');
+      } else {
+        setTelegramStatus(`Still waiting for verification. Send the code to ${botHandle} on Telegram.`);
+      }
+    } catch (error) {
+      console.error('Failed to verify Telegram link:', error);
+      setTelegramStatus('Could not verify right now. Please try again in a moment.');
+    } finally {
+      setVerifyingTelegram(false);
+    }
+  };
+
+  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
     const updatedSettings = {
       ...notificationSettings,
       [key]: !notificationSettings[key],
     };
     setNotificationSettings(updatedSettings);
+    if (user) {
+      const optimisticUser = { ...user, notificationSettings: updatedSettings };
+      setUser(optimisticUser);
+      localStorage.setItem('ddu_user', JSON.stringify(optimisticUser));
+    }
+
+    if (!user?.id) return;
 
     try {
-      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+      const response = await fetch(`/api/users/${user.id}/telegram-notifications`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: telegramNotificationsEnabled, settings: updatedSettings })
@@ -125,8 +215,6 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to update notification settings:', error);
-      // Revert on error
-      setNotificationSettings(notificationSettings);
     }
   };
 
@@ -161,6 +249,9 @@ export default function App() {
           setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
         }
         setNotificationSettings(normalizeNotificationSettings(parsedUser.notificationSettings));
+        if (parsedUser.telegramAuthCode) {
+          setTelegramAuthCode(parsedUser.telegramAuthCode);
+        }
       } catch (e) {
         localStorage.removeItem('ddu_user');
       }
@@ -177,6 +268,17 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!user?.id || user.telegramChatId) return;
+    refreshTelegramAuthCode();
+  }, [user?.id, user?.telegramChatId, refreshTelegramAuthCode]);
+
+  useEffect(() => {
+    if (user?.telegramChatId) {
+      setTelegramStatus(null);
+    }
+  }, [user?.telegramChatId]);
 
   useEffect(() => {
     if (isOnboarded && activeTab === 'home') {
@@ -271,6 +373,9 @@ export default function App() {
     setIsOnboarded(true);
     setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
     setNotificationSettings(normalizedUser.notificationSettings);
+    if (normalizedUser.telegramAuthCode) {
+      setTelegramAuthCode(normalizedUser.telegramAuthCode);
+    }
     localStorage.setItem('ddu_user', JSON.stringify(normalizedUser));
   };
 
@@ -286,9 +391,19 @@ export default function App() {
   };
 
   const handleTelegramNotificationsToggle = async () => {
+    const newValue = !telegramNotificationsEnabled;
+    setTelegramNotificationsEnabled(newValue);
+
+    if (user) {
+      const optimisticUser = { ...user, telegramNotificationsEnabled: newValue, notificationSettings };
+      setUser(optimisticUser);
+      localStorage.setItem('ddu_user', JSON.stringify(optimisticUser));
+    }
+
+    if (!user?.id) return;
+
     try {
-      const newValue = !telegramNotificationsEnabled;
-      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+      const response = await fetch(`/api/users/${user.id}/telegram-notifications`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: newValue, settings: notificationSettings })
@@ -861,10 +976,64 @@ export default function App() {
                   </button>
                 </div>
                 {!user?.telegramChatId && (
-                  <div className="p-4">
-                    <div className="text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
-                      ⚠️ Link your Telegram account first to receive notifications. Open our bot and use your verification code.
+                  <div className="p-4 space-y-3 bg-muted/40 border-t border-border">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold">Connect Telegram to receive alerts</p>
+                        <p className="text-xs text-muted-foreground">
+                          Open {botHandle} on Telegram and send this code to link your account.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => refreshTelegramAuthCode(true)}
+                        disabled={refreshingTelegramCode}
+                        className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-muted transition-colors disabled:opacity-60"
+                      >
+                        <RefreshCw size={14} className={refreshingTelegramCode ? 'animate-spin' : ''} />
+                        {refreshingTelegramCode ? 'Generating' : 'New code'}
+                      </button>
                     </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 text-center font-mono text-lg px-4 py-3 rounded-xl border border-dashed border-border bg-background/60 text-primary tracking-widest">
+                        {telegramAuthCode || '------'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCopyTelegramCode}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors text-xs"
+                      >
+                        <Copy size={14} />
+                        {copiedTelegramCode ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={botUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-colors"
+                      >
+                        Open bot
+                        <ExternalLink size={14} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={verifyTelegramLink}
+                        disabled={verifyingTelegram}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-muted transition-colors text-xs disabled:opacity-60"
+                      >
+                        {verifyingTelegram ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            Checking...
+                          </>
+                        ) : "I've sent the code"}
+                      </button>
+                    </div>
+                    {telegramStatus && (
+                      <div className="text-xs text-muted-foreground">{telegramStatus}</div>
+                    )}
                   </div>
                 )}
                 <div className="space-y-3">
@@ -880,10 +1049,7 @@ export default function App() {
                     {notificationSettingLabels.map((setting) => (
                       <div
                         key={setting.key}
-                        className={cn(
-                          'flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3 transition-colors',
-                          !telegramNotificationsEnabled && 'opacity-60'
-                        )}
+                        className="flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3 transition-colors"
                       >
                         <div>
                           <p className="text-sm font-medium">{setting.title}</p>
@@ -891,10 +1057,9 @@ export default function App() {
                         </div>
                         <button
                           type="button"
-                          disabled={!telegramNotificationsEnabled}
                           onClick={() => handleNotificationSettingToggle(setting.key)}
                           className={cn(
-                            'w-12 h-6 rounded-full relative transition-all disabled:cursor-not-allowed',
+                            'w-12 h-6 rounded-full relative transition-all',
                             notificationSettings[setting.key] ? 'bg-accent' : 'bg-muted'
                           )}
                         >

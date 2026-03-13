@@ -484,6 +484,33 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.post('/api/auth/telegram-code', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.telegramChatId) {
+      return res.status(400).json({ error: 'Telegram is already connected for this account.' });
+    }
+
+    const telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
+    user.telegramAuthCode = telegramAuthCode;
+    await user.save();
+
+    res.json({ telegramAuthCode });
+  } catch (error) {
+    console.error('POST /api/auth/telegram-code error:', error);
+    res.status(500).json({ error: 'Failed to generate Telegram code' });
+  }
+});
+
 app.get('/api/auth/verify-telegram/:code', async (req, res) => {
   try {
     const { code } = req.params;
