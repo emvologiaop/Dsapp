@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
 import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Users, CalendarDays, GraduationCap, Megaphone, MapPin, Clock3, Sparkles } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
@@ -49,6 +49,10 @@ export default function App() {
   const [selectedGroupId, setSelectedGroupId] = useState('all');
   const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
+
+  // Stable refs to avoid stale closures in socket effects
+  const fetchChatsRef = useRef<(() => void) | null>(null);
+  const chatDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -108,33 +112,30 @@ export default function App() {
     }
   }, [isOnboarded, activeTab, user?.id]);
 
+  // Join the user's socket room at app level so notifications and messages
+  // are received even outside of ChatRoom
   useEffect(() => {
-    if (!user?.id) {
-      return;
-    }
-
-    const savedGroups = localStorage.getItem(`ddu_joined_groups_${user.id}`);
-    if (savedGroups) {
-      try {
-        setJoinedGroups(JSON.parse(savedGroups));
-        return;
-      } catch (error) {
-        console.error('Failed to read joined groups:', error);
-      }
-    }
-
-    setJoinedGroups([COMMUNITY_GROUPS[0].id]);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (user?.id) {
-      localStorage.setItem(`ddu_joined_groups_${user.id}`, JSON.stringify(joinedGroups));
-    }
-  }, [joinedGroups, user?.id]);
-
-  const fetchChats = async () => {
     if (!user?.id) return;
 
+    socket.emit('join_chat', user.id);
+
+    // When a new message arrives, refresh the chat list so the preview updates.
+    // Debounce via ref to avoid multiple API calls when several messages arrive at once.
+    const handleNewMessage = () => {
+      if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
+      chatDebounceRef.current = setTimeout(() => fetchChatsRef.current?.(), 300);
+    };
+
+    socket.on('receive_private_message', handleNewMessage);
+
+    return () => {
+      socket.off('receive_private_message', handleNewMessage);
+      if (chatDebounceRef.current) clearTimeout(chatDebounceRef.current);
+    };
+  }, [user?.id]);
+
+  const fetchChats = useCallback(async () => {
+    if (!user?.id) return;
     try {
       const response = await fetch(`/api/users/${user.id}/chats`);
       if (response.ok) {
@@ -144,8 +145,13 @@ export default function App() {
     } catch (error) {
       console.error("Error fetching chats:", error);
     }
-  };
-          
+  }, [user?.id]);
+
+  // Keep the ref in sync so the socket handler always calls the latest version
+  useEffect(() => {
+    fetchChatsRef.current = fetchChats;
+  }, [fetchChats]);
+
   const fetchPosts = async () => {
     if (!user?.id) return;
 
