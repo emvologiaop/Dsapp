@@ -6,6 +6,12 @@ import { MentionInput } from './MentionInput';
 import { UserTagSelector } from './UserTagSelector';
 import { cn } from '../lib/utils';
 import { uploadMultipleImagesToR2, compressImage, UploadProgress } from '../utils/r2Upload';
+import {
+  canUseGhostMode,
+  GHOST_MODE_MIN_ACCOUNT_AGE_DAYS,
+  GHOST_POST_RATE_LIMIT_HOURS,
+  stripMentionsFromGhostContent,
+} from '../utils/ghostPolicy';
 
 interface User {
   _id: string;
@@ -29,6 +35,7 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
   const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
   const [taggedUsers, setTaggedUsers] = useState<User[]>([]);
   const [showTagSelector, setShowTagSelector] = useState(false);
+  const ghostModeLocked = isAnonymous && !!user?.createdAt && !canUseGhostMode(user.createdAt);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -83,12 +90,13 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
       }
 
       // Create post with R2 URLs or base64 previews
+      const normalizedContent = isAnonymous ? stripMentionsFromGhostContent(content).trim() : content;
       const response = await fetch('/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          content,
+          content: normalizedContent,
           isAnonymous,
           mediaUrls,
           taggedUsers: taggedUsers.map(u => u._id)
@@ -104,11 +112,12 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
         setUploadProgress(100);
         onPostCreated();
       } else {
-        throw new Error('Post failed');
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Post failed');
       }
     } catch (error) {
       console.error("Post error:", error);
-      alert('Failed to create post. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to create post. Please try again.');
     } finally {
       setIsPosting(false);
       setUploadProgress(0);
@@ -132,6 +141,27 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
           />
         </div>
       </div>
+
+      {isAnonymous && (
+        <div className={cn(
+          'rounded-xl border p-3 text-xs',
+          ghostModeLocked ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-border bg-muted/50 text-muted-foreground'
+        )}>
+          {ghostModeLocked ? (
+            <ul className="space-y-1 list-disc pl-4">
+              <li>Ghost mode unlocks after {GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.</li>
+              <li>Once unlocked, ghost posts are limited to 1 per {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+            </ul>
+          ) : (
+            <ul className="space-y-1 list-disc pl-4">
+              <li>Ghost posts go to the Ghost Board.</li>
+              <li>@mentions are stripped from ghost posts.</li>
+              <li>Moderators can still trace reported ghost posts.</li>
+              <li>You can only make 1 ghost post every {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+            </ul>
+          )}
+        </div>
+      )}
 
       {imagePreviews.length > 0 && (
         <div className="flex gap-2 flex-wrap">
@@ -192,11 +222,11 @@ export const CreatePost: React.FC<CreatePostProps> = ({ user, isAnonymous, onPos
             <span className="text-xs text-muted-foreground">{imagePreviews.length}/10</span>
           )}
         </div>
-        <button
-          onClick={handlePost}
-          disabled={isPosting || !content.trim()}
-          className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-        >
+          <button
+            onClick={handlePost}
+            disabled={isPosting || !content.trim() || ghostModeLocked}
+            className="px-6 py-2 bg-primary text-primary-foreground font-bold rounded-xl transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+          >
           {isPosting && <Loader2 size={16} className="animate-spin" />}
           {isPosting ? (uploadProgress > 0 ? `${uploadProgress}%` : "Posting...") : "Post"}
         </button>

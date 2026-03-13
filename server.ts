@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -7,9 +8,10 @@ import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import { connectDB } from './src/db.js';
 import { initBot } from './bot/index.js';
-import { User } from './src/models/User.js';
+import { User, type IUser } from './src/models/User.js';
 import { Post } from './src/models/Post.js';
 import { Message } from './src/models/Message.js';
 import { Notification } from './src/models/Notification.js';
@@ -26,6 +28,12 @@ import { processVideo, processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
 import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
+import {
+  canUseGhostMode,
+  GHOST_MODE_MIN_ACCOUNT_AGE_DAYS,
+  GHOST_POST_RATE_LIMIT_HOURS,
+  stripMentionsFromGhostContent,
+} from './src/utils/ghostPolicy.js';
 
 dotenv.config();
 
@@ -43,12 +51,30 @@ const io = new SocketIOServer(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
+// Enable gzip/deflate compression for all HTTP responses
+app.use(compression());
+
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '100kb' }));
 // Use higher limit only for upload endpoints
 app.use('/api/posts', express.json({ limit: '50mb' }));
 app.use('/api/reels', express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve static assets with long-term caching for fingerprinted files
+app.use(
+  express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1y',
+    immutable: true,
+    etag: true,
+    lastModified: true,
+    setHeaders(res, filePath) {
+      // index.html must not be cached so the browser always gets the latest entry point
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  })
+);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -61,7 +87,10 @@ app.use(limiter);
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
   try {
-    await connectDB();
+    // Skip connectDB() when Mongoose is already connected (readyState 1)
+    if (mongoose.connection.readyState !== 1) {
+      await connectDB();
+    }
     next();
   } catch (error: any) {
     const errorMessage = error?.message || String(error);
@@ -109,6 +138,26 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
       else resolve(crypto.timingSafeEqual(Buffer.from(hash, 'hex'), derivedKey));
     });
   });
+}
+
+type AuthUserFields = Pick<
+  IUser,
+  '_id' | 'name' | 'username' | 'email' | 'department' | 'telegramAuthCode' | 'telegramChatId' | 'telegramNotificationsEnabled' | 'role' | 'createdAt'
+>;
+
+function serializeAuthUser(user: AuthUserFields) {
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    username: user.username,
+    email: user.email,
+    department: user.department,
+    telegramAuthCode: user.telegramAuthCode,
+    telegramChatId: user.telegramChatId,
+    telegramNotificationsEnabled: user.telegramNotificationsEnabled,
+    role: user.role,
+    createdAt: user.createdAt,
+  };
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
@@ -300,16 +349,7 @@ app.post('/api/auth/signup', async (req, res) => {
       department,
       telegramAuthCode,
     });
-    res.status(201).json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        department: user.department,
-        telegramAuthCode: user.telegramAuthCode,
-      },
-    });
+    res.status(201).json({ user: serializeAuthUser(user) });
   } catch (error) {
     console.error('POST /api/auth/signup error:', error);
     res.status(500).json({ error: 'Signup failed' });
@@ -326,16 +366,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    res.json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        department: user.department,
-        telegramAuthCode: user.telegramAuthCode,
-      },
-    });
+    res.json({ user: serializeAuthUser(user) });
   } catch (error) {
     console.error('POST /api/auth/login error:', error);
     res.status(500).json({ error: 'Login failed' });
@@ -358,7 +389,12 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
 app.get('/api/posts', async (req, res) => {
   try {
     const { userId } = req.query;
-    const posts = await Post.find({ isDeleted: { $ne: true } })
+    const scope = req.query.scope === 'ghost' ? 'ghost' : 'feed';
+    const postFilter = {
+      isDeleted: { $ne: true },
+      isAnonymous: scope === 'ghost',
+    };
+    const posts = await Post.find(postFilter)
       .select('userId content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers')
       .sort({ createdAt: -1 })
       .limit(50)
@@ -395,34 +431,75 @@ app.post('/api/posts', async (req, res) => {
       return res.status(400).json({ error: 'userId and content are required' });
     }
 
+    const author = await User.findById(userId).lean();
+    if (!author) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const creatingGhostPost = Boolean(isAnonymous);
+    if (creatingGhostPost && !canUseGhostMode(author.createdAt)) {
+      return res.status(403).json({
+        error: `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.`,
+      });
+    }
+
+    if (creatingGhostPost) {
+      const lastGhostPost = await Post.findOne({
+        userId,
+        isAnonymous: true,
+        isDeleted: { $ne: true },
+        createdAt: { $gte: new Date(Date.now() - (GHOST_POST_RATE_LIMIT_HOURS * 60 * 60 * 1000)) },
+      })
+        .sort({ createdAt: -1 })
+        .select('createdAt')
+        .lean();
+
+      if (lastGhostPost) {
+        return res.status(429).json({
+          error: `You can only make 1 ghost post every ${GHOST_POST_RATE_LIMIT_HOURS} hours.`,
+        });
+      }
+    }
+
+    const normalizedContent = creatingGhostPost
+      ? stripMentionsFromGhostContent(content).trim()
+      : content;
+    if (!normalizedContent) {
+      return res.status(400).json({ error: 'Ghost post content cannot be empty after removing mentions.' });
+    }
+
     // Extract mentions from content
-    const mentions = extractMentions(content);
+    const mentions = creatingGhostPost ? [] : extractMentions(normalizedContent);
+    const normalizedTaggedUsers = creatingGhostPost ? [] : (taggedUsers || []);
 
     const post = await Post.create({
       userId,
-      content,
-      isAnonymous: Boolean(isAnonymous),
+      content: normalizedContent,
+      isAnonymous: creatingGhostPost,
       mediaUrl,
       mediaUrls: mediaUrls || [],
-      taggedUsers: taggedUsers || [],
+      taggedUsers: normalizedTaggedUsers,
       mentions
     });
 
+    if (creatingGhostPost) {
+      await User.findByIdAndUpdate(userId, { $addToSet: { postsAsGhost: post._id } });
+    }
+
     // Send mention notifications
-    if (mentions.length > 0 && !isAnonymous) {
+    if (mentions.length > 0 && !creatingGhostPost) {
       await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
     }
 
     // Send tag notifications to tagged users
-    if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
-      const tagger = await User.findById(userId).lean();
-      if (tagger) {
-        const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
+    if (normalizedTaggedUsers.length > 0 && !creatingGhostPost) {
+      if (author) {
+        const filteredTaggedUsers = normalizedTaggedUsers.filter((id: string) => id !== userId);
         if (filteredTaggedUsers.length > 0) {
           const tagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
             userId: taggedUserId,
             type: 'tag',
-            content: `${tagger.name} tagged you in a post`,
+            content: `${author.name} tagged you in a post`,
             relatedUserId: userId,
             relatedPostId: post._id,
           }));
@@ -563,7 +640,10 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
-    const comment = await Comment.create({ postId, userId, content, isAnonymous: Boolean(isAnonymous) });
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
+    const comment = await Comment.create({ postId, userId, content, isAnonymous: false });
     await Post.findByIdAndUpdate(postId, { $inc: { commentsCount: 1 } });
     const populated = await Comment.findById(comment._id).populate('userId', 'name username avatarUrl').lean();
 
@@ -614,6 +694,9 @@ app.post('/api/comments/:commentId/reply', async (req, res) => {
     if (!userId || !content) {
       return res.status(400).json({ error: 'userId and content are required' });
     }
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
 
     const parentComment = await Comment.findById(commentId);
     if (!parentComment) {
@@ -624,7 +707,7 @@ app.post('/api/comments/:commentId/reply', async (req, res) => {
       postId: parentComment.postId,
       userId,
       content,
-      isAnonymous: Boolean(isAnonymous),
+      isAnonymous: false,
       parentCommentId: commentId
     });
 
@@ -1243,12 +1326,15 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
     if (!userId || !text) {
       return res.status(400).json({ error: 'userId and text are required' });
     }
+    if (isAnonymous) {
+      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
+    }
 
     const comment = await Comment.create({
       postId: reelId,
       userId,
       content: text,
-      isAnonymous: Boolean(isAnonymous),
+      isAnonymous: false,
     });
 
     await Reel.findByIdAndUpdate(reelId, { $inc: { commentsCount: 1 } });

@@ -31,6 +31,7 @@ export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
+  const [homeFeedTab, setHomeFeedTab] = useState<'feed' | 'ghost'>('feed');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
@@ -118,7 +119,7 @@ export default function App() {
       console.error("Error fetching chats:", error);
     }
   };
-
+          
   const fetchPosts = async () => {
     if (!user?.id) return;
 
@@ -185,6 +186,14 @@ export default function App() {
     }
   };
 
+  const ghostModeEligible = !user?.createdAt || canUseGhostMode(user.createdAt);
+  const ghostModeDisabled = !!user?.createdAt && !ghostModeEligible;
+
+  const toggleGhostMode = () => {
+    if (ghostModeDisabled) return;
+    setIsAnonymous(!isAnonymous);
+  };
+
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
   }
@@ -249,11 +258,13 @@ export default function App() {
           <NotificationBell userId={user?.id} onOpen={() => setShowNotifications(true)} />
           <ThemeSwitch />
           <button
-            onClick={() => setIsAnonymous(!isAnonymous)}
+            onClick={toggleGhostMode}
             className={cn(
-              "p-2 rounded-full transition-all",
+              "p-2 rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
               isAnonymous ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
             )}
+            disabled={ghostModeDisabled}
+            title={ghostModeDisabled ? `Ghost mode unlocks after ${GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days` : 'Ghost mode'}
           >
             <Ghost size={20} />
           </button>
@@ -350,7 +361,9 @@ export default function App() {
                 isAnonymous={isAnonymous} 
                 onPostCreated={() => {
                   setShowCreatePost(false);
-                  fetchPosts();
+                  const nextScope = isAnonymous ? 'ghost' : 'feed';
+                  setHomeFeedTab(nextScope);
+                  fetchPosts(nextScope);
                 }} 
               />
             )}
@@ -435,7 +448,10 @@ export default function App() {
                 </article>
             )}) : (
               <div className="text-center py-20 text-muted-foreground">
-                <p>No posts yet. Be the first!</p>
+                <p>{homeFeedTab === 'ghost' ? 'No ghost posts yet.' : 'No posts yet. Be the first!'}</p>
+                {homeFeedTab === 'ghost' && (
+                  <p className="text-sm mt-2">Anonymous posts live here so the main feed stays identity-first.</p>
+                )}
               </div>
             )}
           </div>
@@ -550,17 +566,26 @@ export default function App() {
                     </div>
                   </div>
                   <button 
-                    onClick={() => setIsAnonymous(!isAnonymous)}
+                    onClick={toggleGhostMode}
                     className={cn(
-                      "w-12 h-6 rounded-full relative transition-all",
+                      "w-12 h-6 rounded-full relative transition-all disabled:opacity-50 disabled:cursor-not-allowed",
                       isAnonymous ? "bg-accent" : "bg-black/10"
                     )}
+                    disabled={ghostModeDisabled}
                   >
                     <div className={cn(
                       "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
                       isAnonymous ? "right-1" : "left-1"
                     )} />
                   </button>
+                </div>
+                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg border border-border">
+                  <ul className="space-y-1 list-disc pl-4">
+                    <li>Ghost posts are anonymous to other users, but moderators can still trace reported posts internally.</li>
+                    <li>Ghost mode unlocks after {GHOST_MODE_MIN_ACCOUNT_AGE_DAYS} days.</li>
+                    <li>You can only make 1 ghost post every {GHOST_POST_RATE_LIMIT_HOURS} hours.</li>
+                    <li>Comments always use your real profile.</li>
+                  </ul>
                 </div>
               </FriendlyCard>
             </div>
@@ -637,7 +662,7 @@ export default function App() {
         <CommentsPanel
           postId={commentPostId}
           userId={user.id}
-          isAnonymous={isAnonymous}
+          isAnonymous={false}
           onClose={() => setCommentPostId(null)}
         />
       )}
