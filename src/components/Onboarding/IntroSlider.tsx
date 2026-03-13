@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Share2, ShieldCheck, Newspaper, ChevronRight } from 'lucide-react';
+import { DoorOpen, Smartphone, SignalHigh, Network, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ThemeSwitch } from '../ui/ThemeSwitch';
 
@@ -15,36 +15,36 @@ interface Slide {
 
 const slides: Slide[] = [
   {
-    title: "DDU Morning Hustle",
-    description: "Lecture at 8:10, chai at 8:15. Drop updates faster than attendance sheets get passed around.",
-    icon: <Zap className="w-16 h-16" />,
+    title: "Welcome to the Hub.",
+    description: "The heart of Dire Dawa University, now in the palm of your hand.",
+    icon: <DoorOpen className="w-16 h-16" />,
     color: "text-primary",
     accent: "from-sky-500/30 via-blue-500/10 to-violet-500/20",
-    badge: "8:10 shuttle squad"
+    badge: "The Gateway"
   },
   {
-    title: "Canteen Chronicles",
-    description: "Share samosa intel, meme drops, and last-minute assignment SOS with the whole campus crew.",
-    icon: <Share2 className="w-16 h-16" />,
+    title: "Share Your Campus Life.",
+    description: "From dorm to the Toni—post your best moments on Feed and Reels.",
+    icon: <Smartphone className="w-16 h-16" />,
     color: "text-primary",
     accent: "from-amber-500/25 via-orange-400/10 to-rose-500/20",
-    badge: "Samosa scouts"
+    badge: "The Action"
   },
   {
-    title: "Hostel Wi-Fi Legends",
-    description: "Keep chats, clubs, and groups alive even when the hostel Wi-Fi flips a coin.",
-    icon: <ShieldCheck className="w-16 h-16" />,
+    title: "Smart Data. Zero Waste.",
+    description: "High-speed streaming that sips your MBs. More scrolling, less spending.",
+    icon: <SignalHigh className="w-16 h-16" />,
     color: "text-primary",
     accent: "from-emerald-500/25 via-teal-400/10 to-cyan-500/20",
-    badge: "Night-owl mode"
+    badge: "The Technology"
   },
   {
-    title: "Campus Buzz on Loop",
-    description: "Never miss a DDU announcement—pings hit the app and Telegram while you chase credits.",
-    icon: <Newspaper className="w-16 h-16" />,
+    title: "Connect & Stay Updated.",
+    description: "Real-time campus news, built-in chat, and anonymous confessions.",
+    icon: <Network className="w-16 h-16" />,
     color: "text-primary",
     accent: "from-fuchsia-500/20 via-indigo-500/15 to-sky-500/20",
-    badge: "Zero-FOMO club"
+    badge: "The Core"
   }
 ];
 
@@ -162,7 +162,7 @@ export const IntroSlider: React.FC<IntroSliderProps> = ({ onComplete }) => {
           onClick={nextSlide}
           className="w-full py-4 bg-primary text-primary-foreground font-bold rounded-2xl flex items-center justify-center gap-2 group transition-all active:scale-95"
         >
-          {currentSlide === slides.length - 1 ? "Get Started" : "Next"}
+          {currentSlide === slides.length - 1 ? "Get Started →" : "Next"}
           <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
         </button>
       </div>
