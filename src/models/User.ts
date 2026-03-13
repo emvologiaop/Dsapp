@@ -24,7 +24,14 @@ export interface IUser extends Document {
   telegramChatId?: string;
   telegramAuthCode?: string;
   telegramNotificationsEnabled?: boolean;
-  postsAsGhost: mongoose.Types.ObjectId[];
+  notificationSettings?: {
+    messages?: boolean;
+    comments?: boolean;
+    likes?: boolean;
+    follows?: boolean;
+    mentions?: boolean;
+    shares?: boolean;
+  };
   followingIds: mongoose.Types.ObjectId[];
   followerIds: mongoose.Types.ObjectId[];
   role: 'user' | 'admin';
@@ -62,7 +69,14 @@ const UserSchema = new Schema<IUser>(
     telegramChatId: { type: String },
     telegramAuthCode: { type: String },
     telegramNotificationsEnabled: { type: Boolean, default: false },
-    postsAsGhost: [{ type: Schema.Types.ObjectId, ref: 'Post' }],
+    notificationSettings: {
+      messages: { type: Boolean, default: true },
+      comments: { type: Boolean, default: true },
+      likes: { type: Boolean, default: true },
+      follows: { type: Boolean, default: true },
+      mentions: { type: Boolean, default: true },
+      shares: { type: Boolean, default: true },
+    },
     followingIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     followerIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     role: { type: String, enum: ['user', 'admin'], default: 'user' },

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Users, CalendarDays, GraduationCap, Megaphone, MapPin, Clock3, Sparkles } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -40,11 +40,13 @@ export default function App() {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [telegramNotificationsEnabled, setTelegramNotificationsEnabled] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
-  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
-  const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
-  const [showStoryUpload, setShowStoryUpload] = useState(false);
+  const [homeSection, setHomeSection] = useState<CommunitySection>('feed');
+  const [selectedGroupId, setSelectedGroupId] = useState('all');
+  const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
 
   // Stable refs to avoid stale closures in socket effects
   const fetchChatsRef = useRef<(() => void) | null>(null);
@@ -80,6 +82,7 @@ export default function App() {
         if (parsedUser.telegramNotificationsEnabled !== undefined) {
           setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
         }
+        setNotificationSettings(normalizeNotificationSettings(parsedUser.notificationSettings));
       } catch (e) {
         localStorage.removeItem('ddu_user');
       }
@@ -182,14 +185,25 @@ export default function App() {
   };
 
   const handleOnboardingFinish = (userData: any) => {
-    setUser(userData);
+    const normalizedUser = {
+      ...userData,
+      notificationSettings: normalizeNotificationSettings(userData.notificationSettings),
+    };
+    setUser(normalizedUser);
     setIsOnboarded(true);
-    localStorage.setItem('ddu_user', JSON.stringify(userData));
+    setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
+    setNotificationSettings(normalizedUser.notificationSettings);
+    localStorage.setItem('ddu_user', JSON.stringify(normalizedUser));
   };
 
   const handleProfileUpdate = (updatedUser: any) => {
-    const mergedUser = { ...user, ...updatedUser };
+    const mergedUser = {
+      ...user,
+      ...updatedUser,
+      notificationSettings: normalizeNotificationSettings(updatedUser.notificationSettings ?? user?.notificationSettings),
+    };
     setUser(mergedUser);
+    setNotificationSettings(mergedUser.notificationSettings);
     localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
   };
 
@@ -199,12 +213,19 @@ export default function App() {
       const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: newValue })
+        body: JSON.stringify({ enabled: newValue, settings: notificationSettings })
       });
 
       if (response.ok) {
-        setTelegramNotificationsEnabled(newValue);
-        const updatedUser = { ...user, telegramNotificationsEnabled: newValue };
+        const data = await response.json();
+        setTelegramNotificationsEnabled(data.telegramNotificationsEnabled);
+        const nextSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(nextSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: nextSettings,
+        };
         setUser(updatedUser);
         localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
       }
@@ -213,13 +234,69 @@ export default function App() {
     }
   };
 
-  const ghostModeEligible = !user?.createdAt || canUseGhostMode(user.createdAt);
-  const ghostModeDisabled = !!user?.createdAt && !ghostModeEligible;
+  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
+    try {
+      const nextSettings = {
+        ...notificationSettings,
+        [key]: !notificationSettings[key],
+      };
 
-  const toggleGhostMode = () => {
-    if (ghostModeDisabled) return;
-    setIsAnonymous(!isAnonymous);
+      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: telegramNotificationsEnabled,
+          settings: nextSettings,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const normalizedSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(normalizedSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: normalizedSettings,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Failed to update detailed notification settings:', error);
+    }
   };
+
+  const notificationSettingLabels: Array<{
+    key: keyof NotificationSettings;
+    title: string;
+    description: string;
+  }> = [
+    { key: 'messages', title: 'Direct messages', description: 'Private chats and replies from other users' },
+    { key: 'comments', title: 'Comments', description: 'Replies and discussions on your posts' },
+    { key: 'likes', title: 'Likes', description: 'When someone likes your post or reel' },
+    { key: 'follows', title: 'Followers', description: 'New followers and follow-backs' },
+    { key: 'mentions', title: 'Mentions & tags', description: 'Mentions, tags, and direct callouts' },
+    { key: 'shares', title: 'Shares & story views', description: 'Post shares and story-view style activity' },
+  ];
+
+  const toggleGroupMembership = (groupId: string) => {
+    setJoinedGroups((current) => {
+      if (current.includes(groupId)) {
+        const nextGroups = current.filter((id) => id !== groupId);
+        if (selectedGroupId === groupId) {
+          setSelectedGroupId('all');
+        }
+        return nextGroups;
+      }
+
+      setSelectedGroupId(groupId);
+      setHomeSection('groups');
+      return [...current, groupId];
+    });
+  };
+
+  const visiblePosts = getVisibleCommunityPosts(posts, homeSection, selectedGroupId);
 
   if (!isOnboarded) {
     return <OnboardingFlow onFinish={handleOnboardingFinish} />;
@@ -316,131 +393,223 @@ export default function App() {
       <main className="px-6 py-6 max-w-2xl mx-auto">
         {activeTab === 'home' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold">Feed</h2>
-                <p className="text-sm text-muted-foreground">{STORY_LIFETIME_TEXT}</p>
-              </div>
-              <div className="flex items-center gap-2">
+            <FriendlyCard className="space-y-5 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/10 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-primary">
+                    <Sparkles size={14} />
+                    Campus Hub
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">
+                      {homeSection === 'feed'
+                        ? 'Fresh campus feed'
+                        : homeSection === 'groups'
+                          ? 'Student groups'
+                          : homeSection === 'events'
+                            ? 'Events board'
+                            : 'Academic updates'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {homeSection === 'feed'
+                        ? 'A cleaner posting box, highlighted announcements, and quicker campus updates.'
+                        : homeSection === 'groups'
+                          ? 'Join community spaces and post directly into the group conversations you care about.'
+                          : homeSection === 'events'
+                            ? 'Students can request events with title, photo, time, and place for admin approval.'
+                            : 'Admins can publish official academic news, notices, and college updates here.'}
+                    </p>
+                  </div>
+                </div>
                 <button
-                  onClick={() => setShowStoryUpload(true)}
-                  className="p-2 rounded-full border border-border bg-background hover:bg-muted transition-colors"
-                  aria-label="Add story"
-                >
-                  <Plus size={20} />
-                </button>
-                <button 
                   onClick={() => setShowCreatePost(!showCreatePost)}
-                  className="p-2 bg-primary text-primary-foreground rounded-full"
-                  aria-label="Create post"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90"
+                  disabled={homeSection === 'academics' && user?.role !== 'admin'}
                 >
-                  <Plus size={20} />
+                  <Plus size={18} />
+                  {homeSection === 'events' ? 'Request Event' : homeSection === 'academics' ? 'Post News' : 'Create'}
                 </button>
               </div>
-            </div>
 
-            <div className="border-y border-border/70 bg-background -mx-6 px-6 py-4">
-              <div className="flex gap-4 overflow-x-auto pb-1">
-                {storyTrayGroups.map((group) => {
-                  const hasActiveStory = group.stories.length > 0;
-                  const latestStory = group.stories[0];
-                  const isOwnStory = group.user._id === user?.id;
-
-                  return (
-                    <button
-                      key={group.user._id}
-                      type="button"
-                      onClick={() => {
-                        if (!hasActiveStory && isOwnStory) {
-                          setShowStoryUpload(true);
-                          return;
-                        }
-
-                        if (hasActiveStory) {
-                          setActiveStoryGroup({
-                            ...group,
-                            stories: orderStoriesForViewer(group.stories)
-                          });
-                        }
-                      }}
-                      className="flex shrink-0 flex-col items-center gap-2 bg-transparent"
-                    >
-                      <StoryRing
-                        hasActiveStory={hasActiveStory}
-                        hasViewedAll={group.hasViewed}
-                        avatarUrl={group.user.avatarUrl}
-                        name={group.user.name}
-                        username={group.user._id === user?.id ? 'Your story' : group.user.username}
-                        isOwnStory={isOwnStory}
-                      />
-                      <span className="text-[11px] text-muted-foreground">
-                        {hasActiveStory ? getStoryTimeRemaining(latestStory.expiresAt) : 'Add story'}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'feed', label: 'Feed', icon: Home },
+                  { id: 'groups', label: 'Groups', icon: Users },
+                  { id: 'events', label: 'Events', icon: CalendarDays },
+                  { id: 'academics', label: 'Academics', icon: GraduationCap },
+                ].map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => {
+                      setHomeSection(section.id as CommunitySection);
+                      setShowCreatePost(false);
+                      setComposerNotice(null);
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                      homeSection === section.id
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <section.icon size={16} />
+                    {section.label}
+                  </button>
+                ))}
               </div>
-            </div>
+
+              {homeSection === 'groups' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setSelectedGroupId('all')}
+                      className={cn(
+                        'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                        selectedGroupId === 'all' ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      All groups
+                    </button>
+                    {joinedGroups.map((groupId) => (
+                      <button
+                        key={groupId}
+                        onClick={() => setSelectedGroupId(groupId)}
+                        className={cn(
+                          'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors',
+                          selectedGroupId === groupId ? 'bg-foreground text-background' : 'bg-muted text-muted-foreground'
+                        )}
+                      >
+                        {getGroupName(groupId)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {COMMUNITY_GROUPS.map((group) => {
+                      const joined = joinedGroups.includes(group.id);
+                      return (
+                        <FriendlyCard
+                          key={group.id}
+                          className={cn('space-y-3 border border-border/80 bg-gradient-to-br', group.accent)}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-bold">{group.name}</p>
+                              <span className="rounded-full bg-background/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                {group.membersLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{group.summary}</p>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <button
+                              onClick={() => {
+                                toggleGroupMembership(group.id);
+                                setComposerNotice(null);
+                              }}
+                              className={cn(
+                                'rounded-lg px-3 py-2 text-sm font-semibold transition-colors',
+                                joined ? 'bg-foreground text-background' : 'bg-primary text-primary-foreground'
+                              )}
+                            >
+                              {joined ? 'Leave group' : 'Join group'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedGroupId(group.id);
+                                setHomeSection('groups');
+                              }}
+                              className="text-xs font-semibold text-muted-foreground"
+                            >
+                              Open
+                            </button>
+                          </div>
+                        </FriendlyCard>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </FriendlyCard>
+
+            {composerNotice && (
+              <FriendlyCard className="border border-emerald-500/20 bg-emerald-500/10 text-sm text-emerald-700 dark:text-emerald-300">
+                {composerNotice}
+              </FriendlyCard>
+            )}
 
             {showCreatePost && (
-              <CreatePost 
-                user={user} 
-                isAnonymous={isAnonymous} 
-                onPostCreated={() => {
+              <CreatePost
+                user={user}
+                isAnonymous={isAnonymous}
+                currentSection={homeSection}
+                selectedGroupId={selectedGroupId}
+                joinedGroupIds={joinedGroups}
+                onPostCreated={(createdPost) => {
                   setShowCreatePost(false);
-                  const nextScope = isAnonymous ? 'ghost' : 'feed';
-                  setHomeFeedTab(nextScope);
-                  fetchPosts(nextScope);
-                }} 
+                  if (createdPost?.approvalStatus === 'pending') {
+                    setComposerNotice('Your event request was submitted for admin approval and will appear after review.');
+                  } else if (createdPost?.contentType === 'announcement') {
+                    setComposerNotice('Announcement published across the feed and groups.');
+                  } else if (createdPost?.contentType === 'academic') {
+                    setComposerNotice('Academic update published successfully.');
+                  } else {
+                    setComposerNotice(null);
+                  }
+                  fetchPosts();
+                }}
               />
             )}
-            
-            {posts.length > 0 ? posts.map((post) => {
-              const postDisplayName = post.isAnonymous ? 'Ghost' : (post.userId?.username || post.userId?.name || 'User');
 
+            {homeSection === 'academics' && user?.role !== 'admin' && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Only admins can create academic news, but everyone can read the published updates here.
+              </FriendlyCard>
+            )}
+
+            {homeSection === 'groups' && joinedGroups.length === 0 && (
+              <FriendlyCard className="border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                Join a group above to start posting in group conversations.
+              </FriendlyCard>
+            )}
+
+            {visiblePosts.length > 0 ? visiblePosts.map((post) => {
+              const contentType = normalizeContentType(post.contentType);
               return (
-                <article key={post._id} className="bg-background border-y border-border/70 -mx-6 overflow-hidden">
-                  <div className="px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                        {post.isAnonymous ? (
-                          <Ghost size={18} className="text-muted-foreground" />
-                        ) : post.userId?.avatarUrl ? (
-                          <img src={post.userId.avatarUrl} alt={post.userId?.name || 'User'} className="w-full h-full object-cover" />
-                        ) : (
-                          post.userId?.name?.[0] || 'U'
+              <FriendlyCard key={post._id} className="space-y-4 p-0 overflow-hidden">
+                <div className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                      {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                        {contentType === 'announcement' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+                            <Megaphone size={10} />
+                            Announcement
+                          </span>
+                        )}
+                        {contentType === 'academic' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">
+                            <GraduationCap size={10} />
+                            Academics
+                          </span>
+                        )}
+                        {contentType === 'group' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-600">
+                            <Users size={10} />
+                            {getGroupName(post.groupId)}
+                          </span>
+                        )}
+                        {contentType === 'event' && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-600">
+                            <CalendarDays size={10} />
+                            Event
+                          </span>
                         )}
                       </div>
-                      <div>
-                        <p className="text-sm font-bold">{postDisplayName}</p>
-                        <p className="text-[11px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!post.isAnonymous && user && post.userId?._id !== user.id && (
-                        <FollowButton
-                          userId={user.id}
-                          targetId={post.userId._id}
-                          initialIsFollowing={post.isFollowing}
-                        />
-                      )}
-                      {!post.isAnonymous && (
-                        <PostOptions
-                          postId={post._id}
-                          userId={user?.id}
-                          postOwnerId={post.userId?._id}
-                          initialContent={post.content}
-                          initialMediaUrls={post.mediaUrls || (post.mediaUrl ? [post.mediaUrl] : [])}
-                          onDelete={() => {
-                            setPosts(posts.filter(p => p._id !== post._id));
-                          }}
-                          onEdit={(content, mediaUrls) => {
-                            setPosts(posts.map(p =>
-                              p._id === post._id ? { ...p, content, mediaUrls } : p
-                            ));
-                          }}
-                        />
-                      )}
+                      <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
                     </div>
                   </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
@@ -454,13 +623,29 @@ export default function App() {
                     onLike={() => handleDoubleTapLike(post._id)}
                   />
                 ) : null}
-                <div className="px-6 py-4 space-y-3">
-                  {post.content && (
-                    <p className="text-sm text-foreground leading-relaxed">
-                      <span className="font-semibold mr-2">{postDisplayName}</span>
-                      {post.content}
-                    </p>
+                <div className="p-4 space-y-2">
+                  {post.title && (
+                    <p className="text-base font-bold text-foreground">{post.title}</p>
                   )}
+                  {contentType === 'event' && (
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      {post.eventTime && (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 size={12} />
+                          {new Date(post.eventTime).toLocaleString()}
+                        </span>
+                      )}
+                      {post.place && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin size={12} />
+                          {post.place}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <p className="text-sm text-foreground leading-relaxed">
+                    {post.content}
+                  </p>
                   <PostActions
                     postId={post._id}
                     userId={user?.id}
@@ -471,14 +656,20 @@ export default function App() {
                     initialShares={post.sharesCount}
                     onComment={() => setCommentPostId(post._id)}
                   />
-                  </div>
-                </article>
-            )}) : (
+                </div>
+              </FriendlyCard>
+            );
+            }) : (
               <div className="text-center py-20 text-muted-foreground">
-                <p>{homeFeedTab === 'ghost' ? 'No ghost posts yet.' : 'No posts yet. Be the first!'}</p>
-                {homeFeedTab === 'ghost' && (
-                  <p className="text-sm mt-2">Anonymous posts live here so the main feed stays identity-first.</p>
-                )}
+                <p>
+                  {homeSection === 'groups'
+                    ? 'No group posts yet. Share the first update with your community.'
+                    : homeSection === 'events'
+                      ? 'No approved events yet. Request one to get things started.'
+                      : homeSection === 'academics'
+                        ? 'No academic news yet.'
+                        : 'No posts yet. Be the first!'}
+                </p>
               </div>
             )}
           </div>
@@ -539,7 +730,7 @@ export default function App() {
 
             {user?.role === 'admin' && (
               <div className="space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Admin</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Admin</h3>
                 <FriendlyCard
                   onClick={() => setShowAdminDashboard(true)}
                   className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50 transition-all"
@@ -556,27 +747,27 @@ export default function App() {
             )}
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Profile</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Profile</h3>
               <FriendlyCard className="flex items-center gap-4">
                 <div className="w-16 h-16 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-2xl font-bold text-accent">
                   {user?.name?.[0] || 'U'}
                 </div>
                 <div>
                   <p className="font-bold text-lg">{user?.name || 'User'}</p>
-                  <p className="text-sm text-white/40">@{user?.username || 'username'}</p>
+                  <p className="text-sm text-muted-foreground">@{user?.username || 'username'}</p>
                 </div>
               </FriendlyCard>
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Data & Privacy</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Data & Privacy</h3>
               <FriendlyCard className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Zap size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Lite Mode (240p)</p>
-                      <p className="text-[10px] text-black/40">Save data on campus Wi-Fi</p>
+                      <p className="text-xs text-muted-foreground">Save data on campus Wi-Fi</p>
                     </div>
                   </div>
                   <button className="w-12 h-6 bg-accent rounded-full relative transition-all">
@@ -589,14 +780,14 @@ export default function App() {
                     <Shield size={18} className="text-purple-400" />
                     <div>
                       <p className="text-sm font-medium">Anonymous Mode</p>
-                      <p className="text-[10px] text-black/40">Post as Ghost</p>
+                      <p className="text-xs text-muted-foreground">Post as Ghost</p>
                     </div>
                   </div>
                   <button 
                     onClick={toggleGhostMode}
                     className={cn(
-                      "w-12 h-6 rounded-full relative transition-all disabled:opacity-50 disabled:cursor-not-allowed",
-                      isAnonymous ? "bg-accent" : "bg-black/10"
+                      "w-12 h-6 rounded-full relative transition-all",
+                      isAnonymous ? "bg-accent" : "bg-muted"
                     )}
                     disabled={ghostModeDisabled}
                   >
@@ -618,21 +809,21 @@ export default function App() {
             </div>
 
             <div className="space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-white/40 ml-1">Integrations</h3>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground ml-1">Integrations</h3>
               <FriendlyCard className="space-y-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Bell size={18} className="text-accent" />
                     <div>
                       <p className="text-sm font-medium">Telegram Notifications</p>
-                      <p className="text-[10px] text-black/40">Receive notifications via Telegram bot</p>
+                      <p className="text-xs text-muted-foreground">Telegram is required for account authentication and can also deliver alerts.</p>
                     </div>
                   </div>
                   <button
                     onClick={handleTelegramNotificationsToggle}
                     className={cn(
                       "w-12 h-6 rounded-full relative transition-all",
-                      telegramNotificationsEnabled ? "bg-accent" : "bg-black/10"
+                      telegramNotificationsEnabled ? "bg-accent" : "bg-muted"
                     )}
                   >
                     <div className={cn(
@@ -643,9 +834,51 @@ export default function App() {
                 </div>
                 {!user?.telegramChatId && (
                   <div className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-200">
-                    ⚠️ Link your Telegram account first to receive notifications
+                    ⚠️ Link your Telegram account to finish secure authentication and enable bot notifications.
                   </div>
                 )}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold">Detailed notification settings</p>
+                      <p className="text-xs text-muted-foreground">
+                        Choose which updates the Telegram bot should surface for your account.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {notificationSettingLabels.map((setting) => (
+                      <div
+                        key={setting.key}
+                        className={cn(
+                          'flex items-center justify-between gap-4 rounded-2xl border border-border px-4 py-3 transition-colors',
+                          !telegramNotificationsEnabled && 'opacity-60'
+                        )}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{setting.title}</p>
+                          <p className="text-xs text-muted-foreground">{setting.description}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!telegramNotificationsEnabled}
+                          onClick={() => handleNotificationSettingToggle(setting.key)}
+                          className={cn(
+                            'w-12 h-6 rounded-full relative transition-all disabled:cursor-not-allowed',
+                            notificationSettings[setting.key] ? 'bg-accent' : 'bg-muted'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'absolute top-1 w-4 h-4 bg-white rounded-full transition-all',
+                              notificationSettings[setting.key] ? 'right-1' : 'left-1'
+                            )}
+                          />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </FriendlyCard>
             </div>
 
@@ -666,7 +899,7 @@ export default function App() {
                   href="https://t.me/dev_envologia"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
+                   className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   🐛 Report Bug to @dev_envologia
                 </a>
@@ -675,7 +908,7 @@ export default function App() {
                   href="https://t.me/dev_envologia"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-xs text-white/30 hover:text-white/60 transition-colors"
+                   className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   💡 Suggest Feature to @dev_envologia
                 </a>
