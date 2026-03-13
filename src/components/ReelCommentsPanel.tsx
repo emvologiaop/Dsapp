@@ -5,7 +5,8 @@ import { X, Send, Ghost } from 'lucide-react';
 interface Comment {
   _id: string;
   userId: { _id: string; name: string } | null;
-  text: string;
+  content: string;
+  text?: string;
   isAnonymous: boolean;
   createdAt: string;
 }
@@ -54,8 +55,8 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
-          text: newComment,
-          isAnonymous: false,
+          content: newComment,
+          isAnonymous,
         }),
       });
       if (response.ok) {
@@ -113,17 +114,10 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                     )}
                   </div>
                   <div className="flex-1">
-                    <button
-                      type="button"
-                      onClick={() => !comment.isAnonymous && onViewProfile?.(comment.userId?._id)}
-                      disabled={comment.isAnonymous || !comment.userId?._id}
-                      className="text-left disabled:cursor-default"
-                    >
-                      <p className="text-sm font-bold hover:text-primary transition-colors">
-                        {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
-                      </p>
-                    </button>
-                    <p className="text-sm text-foreground mt-1">{comment.text}</p>
+                    <p className="text-sm font-bold">
+                      {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
+                    </p>
+                    <p className="text-sm text-foreground mt-1">{comment.content || comment.text}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(comment.createdAt).toLocaleString()}
                     </p>

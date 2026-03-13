@@ -52,50 +52,8 @@ const PORT = process.env.PORT || 3000;
 app.use(compression());
 
 app.use(cors({ origin: allowedOrigins }));
-
-app.use((_, res, next) => {
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Referrer-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  next();
-});
-
-app.use('/api', (req, res, next) => {
-  if (shouldBypassOriginCheck(req)) {
-    return next();
-  }
-
-  const requestOrigin = getRequestOrigin(req);
-  if (!isOriginAllowed(requestOrigin, allowedOrigins)) {
-    return res.status(403).json({ error: 'Untrusted request origin' });
-  }
-
-  next();
-});
-
-app.use(express.json({ limit: '100kb' }));
-// Use higher limit only for upload endpoints
-app.use('/api/posts', express.json({ limit: '50mb' }));
-app.use('/api/reels', express.json({ limit: '50mb' }));
-
-// Serve static assets with long-term caching for fingerprinted files
-app.use(
-  express.static(path.join(__dirname, 'dist'), {
-    maxAge: '1y',
-    immutable: true,
-    etag: true,
-    lastModified: true,
-    setHeaders(res, filePath) {
-      // index.html must not be cached so the browser always gets the latest entry point
-      if (filePath.endsWith('.html')) {
-        res.setHeader('Cache-Control', 'no-cache');
-      }
-    },
-  })
-);
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'dist')));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -606,8 +564,8 @@ app.post('/api/posts', async (req, res) => {
     }
 
     // Send mention notifications
-    if (approvalStatus === 'approved' && mentions.length > 0 && !post.isAnonymous) {
-      await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
+    if (mentions.length > 0 && !isAnonymous) {
+      await sendMentionNotifications(userId, mentions, 'post', post._id.toString(), io);
     }
 
     // Send tag notifications to tagged users
@@ -1369,7 +1327,7 @@ app.post('/api/reels', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString());
+      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString(), io);
     }
 
     // Send tag notifications to tagged users
@@ -1448,9 +1406,10 @@ app.get('/api/reels/:reelId/comments', async (req, res) => {
 app.post('/api/reels/:reelId/comments', async (req, res) => {
   try {
     const { reelId } = req.params;
-    const { userId, text, isAnonymous } = req.body;
-    if (!userId || !text) {
-      return res.status(400).json({ error: 'userId and text are required' });
+    const { userId, text, content, isAnonymous } = req.body;
+    const commentContent = content || text;
+    if (!userId || !commentContent) {
+      return res.status(400).json({ error: 'userId and content (or text) are required' });
     }
     if (isAnonymous) {
       return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
@@ -1459,8 +1418,8 @@ app.post('/api/reels/:reelId/comments', async (req, res) => {
     const comment = await Comment.create({
       postId: reelId,
       userId,
-      content: text,
-      isAnonymous: false,
+      content: commentContent,
+      isAnonymous: Boolean(isAnonymous),
     });
 
     await Reel.findByIdAndUpdate(reelId, { $inc: { commentsCount: 1 } });
