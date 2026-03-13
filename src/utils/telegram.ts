@@ -22,6 +22,14 @@ export function getTelegramProfileUrl(
   return `https://t.me/${normalizeTelegramUsername(username, fallback)}`;
 }
 
+export function getTelegramDeepLink(
+  startPayload: string,
+  username?: string,
+  fallback = DEFAULT_TELEGRAM_BOT_USERNAME
+) {
+  return `${getTelegramProfileUrl(username, fallback)}?start=${encodeURIComponent(startPayload)}`;
+}
+
 export function resolveTelegramWebhookUrl({
   explicitUrl,
   appUrl,

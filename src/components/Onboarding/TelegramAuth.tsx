@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Send, ShieldCheck, Copy, ExternalLink, RefreshCw } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
-import { getTelegramHandle, getTelegramProfileUrl } from '../../utils/telegram';
+import { getTelegramHandle, getTelegramDeepLink, getTelegramProfileUrl } from '../../utils/telegram';
 
 interface TelegramAuthProps {
   onComplete: (userData?: any) => void;
@@ -15,7 +15,9 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
   const [copied, setCopied] = useState(false);
   const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
   const botHandle = getTelegramHandle(botUsername);
-  const botUrl = getTelegramProfileUrl(botUsername);
+  const botUrl = authCode
+    ? getTelegramDeepLink(authCode, botUsername)
+    : getTelegramProfileUrl(botUsername);
 
   useEffect(() => {
     if (!initialCode) {
@@ -80,11 +82,11 @@ export const TelegramAuth: React.FC<TelegramAuthProps> = ({ onComplete, initialC
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-xs bg-muted border border-border px-4 py-2 rounded-full hover:bg-muted/80 transition-all"
           >
-            Open Bot <ExternalLink size={14} />
+            Open Bot &amp; Send Code <ExternalLink size={14} />
           </a>
           
           <p className="text-sm text-muted-foreground">
-            2. Send this unique code to the bot to verify your account:
+            2. Tap <strong>Start</strong> in Telegram — the bot will verify your code automatically. Or copy the code below and send it manually:
           </p>
           
           <div className="relative group">
