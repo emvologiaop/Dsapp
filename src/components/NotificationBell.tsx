@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bell } from 'lucide-react';
-import socket from '../services/socket';
+import { io, Socket } from 'socket.io-client';
 
 interface Notification {
   id: string;
@@ -18,27 +18,42 @@ interface NotificationBellProps {
 
 export const NotificationBell: React.FC<NotificationBellProps> = ({ userId, onOpen }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
     if (!userId) return;
 
     const fetchNotifications = async () => {
-      const response = await fetch(`/api/notifications/${userId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setNotifications(data);
+      try {
+        const response = await fetch(`/api/notifications/${userId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setNotifications(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch notifications:', error);
       }
     };
     fetchNotifications();
 
-    const handleNewNotification = (notification: Notification) => {
-      setNotifications(prev => [notification, ...prev]);
-    };
+    if (!socketRef.current) {
+      socketRef.current = io({ transports: ['websocket', 'polling'] });
+    }
 
-    socket.on('new_notification', handleNewNotification);
+    const socket = socketRef.current;
+    socket.emit('join', `user_${userId}`);
+
+    const handleNotification = (notification: Notification) => {
+      if (notification.userId === userId) {
+        setNotifications(prev => [notification, ...prev]);
+      }
+    };
+    socket.on('new_notification', handleNotification);
 
     return () => {
-      socket.off('new_notification', handleNewNotification);
+      socket.off('new_notification', handleNotification);
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [userId]);
 
@@ -48,7 +63,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userId, onOp
     <button onClick={onOpen} className="relative p-2 rounded-full bg-muted text-muted-foreground hover:text-primary transition-all">
       <Bell size={20} />
       {unreadCount > 0 && (
-        <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-primary rounded-full" />
+        <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-primary rounded-full animate-pulse" />
       )}
     </button>
   );

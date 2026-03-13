@@ -388,16 +388,54 @@ io.on('connection', (socket) => {
 
 // ── Auth Routes ────────────────────────────────────────────────────────────────
 
-app.post('/api/auth/signup', async (req, res) => {
+// Check username availability
+app.get('/api/auth/check-username', async (req, res) => {
+  try {
+    const { username } = req.query;
+    if (!username || typeof username !== 'string') {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+    const existing = await User.findOne({ username: username.toLowerCase() });
+    res.json({ available: !existing });
+  } catch (error) {
+    console.error('GET /api/auth/check-username error:', error);
+    res.status(500).json({ error: 'Failed to check username' });
+  }
+});
+
+app.post('/api/auth/signup', uploadImage, async (req, res) => {
   try {
     const { name, username, email, password, age, gender, department } = req.body;
     if (!name || !username || !email || !password) {
       return res.status(400).json({ error: 'Name, username, email and password are required' });
     }
+
+    // Validate username format (Instagram-like: lowercase, numbers, underscores, periods)
+    const usernameRegex = /^[a-z0-9_.]{3,20}$/;
+    if (!usernameRegex.test(username.toLowerCase())) {
+      return res.status(400).json({ error: 'Username must be 3-20 characters: lowercase letters, numbers, underscores, and periods only' });
+    }
+
     const existing = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
     if (existing) {
-      return res.status(409).json({ error: 'Email or username already in use' });
+      if (existing.email === email.toLowerCase()) {
+        return res.status(409).json({ error: 'Email already in use' });
+      }
+      return res.status(409).json({ error: 'Username already taken' });
     }
+
+    // Handle avatar upload
+    let avatarUrl = '';
+    if (req.file) {
+      try {
+        const processed = await processImage(req.file.buffer, 400, 400);
+        const filename = generateUniqueFilename('avatar.webp');
+        avatarUrl = await uploadToR2(processed, filename, 'image/webp');
+      } catch (uploadError) {
+        console.error('Avatar upload error:', uploadError);
+      }
+    }
+
     const telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
     const user = await User.create({
       name,
@@ -407,10 +445,19 @@ app.post('/api/auth/signup', async (req, res) => {
       age: age ? Number(age) : undefined,
       gender,
       department,
+      avatarUrl,
       telegramAuthCode,
     });
     res.status(201).json({
-      user: formatAuthUser(user),
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        department: user.department,
+        telegramAuthCode: user.telegramAuthCode,
+      },
     });
   } catch (error) {
     console.error('POST /api/auth/signup error:', error);
@@ -1063,8 +1110,14 @@ app.put('/api/users/:userId/profile', async (req, res) => {
     const { userId } = req.params;
     const { name, username, bio, website, location, department } = req.body;
 
-    // Check if username is taken (if changed)
+    // Validate username format (Instagram-like)
     if (username) {
+      const usernameRegex = /^[a-z0-9_.]{3,20}$/;
+      if (!usernameRegex.test(username.toLowerCase())) {
+        return res.status(400).json({ error: 'Username must be 3-20 characters: lowercase letters, numbers, underscores, and periods only' });
+      }
+
+      // Check if username is taken (case-insensitive)
       const existingUser = await User.findOne({ username: username.toLowerCase() });
       if (existingUser && existingUser._id.toString() !== userId) {
         return res.status(400).json({ error: 'Username already taken' });
@@ -1100,6 +1153,28 @@ app.put('/api/users/:userId/profile', async (req, res) => {
   } catch (error) {
     console.error('PUT /api/users/:userId/profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// Avatar upload endpoint
+app.put('/api/users/:userId/avatar', uploadImage, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const processed = await processImage(req.file.buffer, 400, 400);
+    const filename = generateUniqueFilename('avatar.webp');
+    const avatarUrl = await uploadToR2(processed, filename, 'image/webp');
+
+    const user = await User.findByIdAndUpdate(userId, { avatarUrl }, { new: true });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ avatarUrl: user.avatarUrl });
+  } catch (error) {
+    console.error('PUT /api/users/:userId/avatar error:', error);
+    res.status(500).json({ error: 'Failed to upload avatar' });
   }
 });
 

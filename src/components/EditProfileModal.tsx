@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Camera, Loader2, BadgeCheck, CheckCircle, Clock, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Camera, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { FriendlyCard } from './FriendlyCard';
@@ -27,15 +27,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeSection, setActiveSection] = useState<'profile' | 'verification'>('profile');
-
-  // Verification request state
-  const [verifRealName, setVerifRealName] = useState('');
-  const [verifPhotoUrl, setVerifPhotoUrl] = useState('');
-  const [verifNote, setVerifNote] = useState('');
-  const [verifLoading, setVerifLoading] = useState(false);
-  const [verifMessage, setVerifMessage] = useState('');
-  const [verifError, setVerifError] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadedAvatarUrl, setUploadedAvatarUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -47,8 +43,54 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
         location: user.location || '',
         department: user.department || '',
       });
+      setAvatarPreview(null);
+      setAvatarFile(null);
+      setUploadedAvatarUrl(null);
     }
   }, [user]);
+
+  const handleAvatarSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image must be under 5MB');
+        return;
+      }
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setAvatarPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAvatarUpload = async (): Promise<string | null> => {
+    if (!avatarFile || !user?.id) return null;
+    setUploadingAvatar(true);
+    try {
+      const formDataUpload = new FormData();
+      formDataUpload.append('avatar', avatarFile);
+      const response = await fetch(`/api/users/${user.id}/avatar`, {
+        method: 'PUT',
+        body: formDataUpload,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAvatarFile(null);
+        setUploadedAvatarUrl(data.avatarUrl);
+        return data.avatarUrl;
+      } else {
+        const data = await response.json();
+        setError(data.error || 'Failed to upload photo');
+        return null;
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      setError('Failed to upload photo');
+      return null;
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,14 +98,27 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setIsLoading(true);
 
     try {
+      // Upload avatar first if changed
+      let newAvatarUrl: string | null = null;
+      if (avatarFile) {
+        newAvatarUrl = await handleAvatarUpload();
+      }
+
       const response = await fetch(`/api/users/${user.id}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          username: formData.username.toLowerCase(),
+        }),
       });
 
       if (response.ok) {
         const updatedUser = await response.json();
+        // Merge avatar URL if it was uploaded
+        if (newAvatarUrl) {
+          updatedUser.avatarUrl = newAvatarUrl;
+        }
         onSave(updatedUser);
         onClose();
       } else {
@@ -80,7 +135,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: name === 'username' ? value.toLowerCase() : value }));
   };
 
   const handleVerificationRequest = async (e: React.FormEvent) => {
@@ -196,62 +251,46 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               </button>
             </div>
 
-            {/* Section tabs */}
-            <div className="flex border-b border-border">
-              <button
-                onClick={() => setActiveSection('profile')}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${activeSection === 'profile' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                Profile
-              </button>
-              <button
-                onClick={() => setActiveSection('verification')}
-                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${activeSection === 'verification' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                <BadgeCheck className="w-4 h-4" />
-                Verification
-              </button>
-            </div>
-
-            {activeSection === 'profile' ? (
-              /* Profile Form */
-              <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-180px)]">
-                <div className="px-6 py-6 space-y-6">
-                  {/* Profile Picture */}
-                  <div className="flex items-center gap-6">
-                    <div className="relative">
-                      <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-[3px] border-primary/20 shadow-md">
-                        {user?.avatarUrl ? (
-                          <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-primary">{user?.name?.[0] || 'U'}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <button
-                        type="button"
-                        className="text-sm font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-2"
-                      >
-                        <Camera className="w-4 h-4" />
-                        Change Photo
-                      </button>
-                      <p className="text-xs text-muted-foreground mt-1">Coming soon to DDU Social</p>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div className="px-6 py-6 space-y-6">
+                {/* Profile Picture */}
+                <div className="flex items-center gap-6">
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-[3px] border-primary/20 shadow-md">
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                      ) : user?.avatarUrl ? (
+                        <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-primary">{user?.name?.[0] || 'U'}</span>
+                      )}
                     </div>
                   </div>
 
                   {/* Name */}
                   <div>
-                    <label className="block text-sm font-semibold mb-2">Name</label>
                     <input
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                      placeholder="Your name"
-                      required
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarSelect}
+                      className="hidden"
                     />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                      className="text-sm font-semibold text-primary hover:text-primary/80 transition-colors flex items-center gap-2"
+                    >
+                      {uploadingAvatar ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Camera className="w-4 h-4" />
+                      )}
+                      Change Photo
+                    </button>
+                    <p className="text-xs text-muted-foreground mt-1">JPG, PNG or WebP, max 5MB</p>
                   </div>
 
                   {/* Username */}
@@ -271,22 +310,22 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     </p>
                   </div>
 
-                  {/* Bio */}
-                  <div>
-                    <label className="block text-sm font-semibold mb-2">Bio</label>
-                    <textarea
-                      name="bio"
-                      value={formData.bio}
-                      onChange={handleChange}
-                      rows={3}
-                      maxLength={150}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-                      placeholder="Tell us about yourself..."
-                    />
-                    <p className="text-xs text-muted-foreground mt-1 text-right">
-                      {formData.bio.length}/150
-                    </p>
-                  </div>
+                {/* Username */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Username</label>
+                  <input
+                    type="text"
+                    name="username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    placeholder="username"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Lowercase letters, numbers, underscores & periods only
+                  </p>
+                </div>
 
                   {/* Website */}
                   <div>
