@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
 import { FollowButton } from './FollowButton';
-import { Settings, Grid3x3, Film, Tag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, Sparkles } from 'lucide-react';
+import { Settings, Grid3x3, Film, Tag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, Sparkles, ArrowLeft, MessageSquare } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -9,6 +9,8 @@ interface InstagramProfileProps {
   userId: string;
   currentUserId: string;
   onEditProfile?: () => void;
+  onBack?: () => void;
+  onMessageUser?: (user: any) => void;
 }
 
 type ProfileTab = 'posts' | 'reels' | 'tagged';
@@ -16,7 +18,9 @@ type ProfileTab = 'posts' | 'reels' | 'tagged';
 export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   userId,
   currentUserId,
-  onEditProfile
+  onEditProfile,
+  onBack,
+  onMessageUser,
 }) => {
   const [profile, setProfile] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,7 +58,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       const res = await fetch(`/api/users/${userId}/posts`);
       if (res.ok) {
         const data = await res.json();
-        setPosts(data);
+        setPosts(data.posts || []);
       }
     } catch (error) {
       console.error('Failed to fetch posts:', error);
@@ -66,7 +70,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       const res = await fetch(`/api/users/${userId}/reels`);
       if (res.ok) {
         const data = await res.json();
-        setReels(data);
+        setReels(data.reels || []);
       }
     } catch (error) {
       console.error('Failed to fetch reels:', error);
@@ -78,7 +82,10 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       const res = await fetch(`/api/users/${userId}/tagged`);
       if (res.ok) {
         const data = await res.json();
-        setTaggedContent(data);
+        setTaggedContent([
+          ...(data.posts || []).map((post: any) => ({ ...post, type: 'post' })),
+          ...(data.reels || []).map((reel: any) => ({ ...reel, type: 'reel' })),
+        ]);
       }
     } catch (error) {
       console.error('Failed to fetch tagged content:', error);
@@ -121,9 +128,9 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               className="aspect-square bg-muted overflow-hidden cursor-pointer group relative"
             >
-              {post.mediaUrl ? (
+              {(post.mediaUrls?.[0] || post.mediaUrl) ? (
                 <img
-                  src={post.mediaUrl}
+                  src={post.mediaUrls?.[0] || post.mediaUrl}
                   alt="Post"
                   className="w-full h-full object-cover transition-transform group-hover:scale-110"
                 />
@@ -165,9 +172,9 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
               animate={{ opacity: 1, scale: 1 }}
               className="aspect-[9/16] bg-muted overflow-hidden cursor-pointer group relative"
             >
-              {reel.mediaUrl && (
+              {(reel.thumbnailUrl || reel.videoUrl) && (
                 <img
-                  src={reel.mediaUrl}
+                  src={reel.thumbnailUrl || reel.videoUrl}
                   alt="Reel"
                   className="w-full h-full object-cover transition-transform group-hover:scale-110"
                 />
@@ -239,6 +246,16 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     <div className="space-y-0">
       {/* Profile Header - DDU Style */}
       <div className="px-6 py-6 bg-gradient-to-b from-primary/5 to-transparent">
+        {!isOwnProfile && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground mb-4"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to your profile
+          </button>
+        )}
         <div className="flex items-start gap-6 mb-6">
           {/* Avatar with DDU ring */}
           <div className="relative">
@@ -317,12 +334,22 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                   </button>
                 </>
               ) : (
-                <FollowButton
-                  userId={currentUserId}
-                  targetId={userId}
-                  initialIsFollowing={profile.isFollowing}
-                  className="flex-1 rounded-lg font-semibold"
-                />
+                <>
+                  <FollowButton
+                    userId={currentUserId}
+                    targetId={userId}
+                    initialIsFollowing={profile.isFollowing}
+                    className="flex-1 rounded-lg font-semibold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onMessageUser?.(profile)}
+                    className="flex items-center justify-center gap-2 bg-muted hover:bg-muted/80 text-foreground px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    Message
+                  </button>
+                </>
               )}
             </div>
           </div>

@@ -15,6 +15,7 @@ interface ReelCommentsPanelProps {
   userId: string;
   isAnonymous: boolean;
   onClose: () => void;
+  onViewProfile?: (userId?: string | null) => void;
 }
 
 export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
@@ -22,6 +23,7 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
   userId,
   isAnonymous,
   onClose,
+  onViewProfile,
 }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -111,9 +113,16 @@ export const ReelCommentsPanel: React.FC<ReelCommentsPanelProps> = ({
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-bold">
-                      {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => !comment.isAnonymous && onViewProfile?.(comment.userId?._id)}
+                      disabled={comment.isAnonymous || !comment.userId?._id}
+                      className="text-left disabled:cursor-default"
+                    >
+                      <p className="text-sm font-bold hover:text-primary transition-colors">
+                        {comment.isAnonymous ? 'Ghost' : comment.userId?.name || 'User'}
+                      </p>
+                    </button>
                     <p className="text-sm text-foreground mt-1">{comment.text}</p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(comment.createdAt).toLocaleString()}
