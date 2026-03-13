@@ -1708,13 +1708,14 @@ app.get('/api/stories', async (req, res) => {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    const user = await User.findById(userId).lean();
+    const currentUserId = userId.toString();
+    const user = await User.findById(currentUserId).lean();
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Get stories from followed users + own stories
-    const followedIds = [...user.followingIds, userId];
+    const followedIds = [...user.followingIds, currentUserId];
     const now = new Date();
 
     const stories = await Story.find({
@@ -1728,20 +1729,20 @@ app.get('/api/stories', async (req, res) => {
 
     // Group stories by user
     const storiesByUser = stories.reduce((acc: any, story: any) => {
-      const userId = story.userId._id.toString();
-      if (!acc[userId]) {
-        acc[userId] = {
+      const storyOwnerId = story.userId._id.toString();
+      if (!acc[storyOwnerId]) {
+        acc[storyOwnerId] = {
           user: story.userId,
           stories: [],
           hasViewed: false
         };
       }
-      acc[userId].stories.push(story);
+      acc[storyOwnerId].stories.push(story);
       // Check if current user has viewed all stories from this user
-      const hasViewedAll = acc[userId].stories.every((s: any) =>
-        s.views.some((v: any) => v.toString() === userId)
+      const hasViewedAll = acc[storyOwnerId].stories.every((s: any) =>
+        s.views.some((v: any) => v.toString() === currentUserId)
       );
-      acc[userId].hasViewed = hasViewedAll;
+      acc[storyOwnerId].hasViewed = hasViewedAll;
       return acc;
     }, {});
 
