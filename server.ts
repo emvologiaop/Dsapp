@@ -428,9 +428,8 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
     let avatarUrl = '';
     if (req.file) {
       try {
-        const processed = await processImage(req.file.buffer, 400, 400);
         const filename = generateUniqueFilename('avatar.webp');
-        avatarUrl = await uploadToR2(processed, filename, 'image/webp');
+        avatarUrl = await uploadToR2(req.file.buffer, filename, 'image/webp');
       } catch (uploadError) {
         console.error('Avatar upload error:', uploadError);
       }
@@ -572,7 +571,7 @@ app.get('/api/posts', async (req, res) => {
 
 app.post('/api/posts', async (req, res) => {
   try {
-    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers } = req.body;
+    const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers, contentType, groupId, title, place, eventTime, creatingGhostPost } = req.body;
     const normalizedContent = typeof content === 'string' ? content.trim() : '';
     const hasMedia = Boolean(mediaUrl) || (Array.isArray(mediaUrls) && mediaUrls.length > 0);
 
@@ -639,7 +638,7 @@ app.post('/api/posts', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(userId, mentions, 'post', post._id.toString(), io);
+      await sendMentionNotifications(userId, mentions, 'post', post._id.toString());
     }
 
     // Send tag notifications to tagged users
@@ -1191,9 +1190,7 @@ app.put('/api/users/:userId/avatar', uploadImage.single('avatar'), async (req, r
       return res.status(400).json({ error: 'No image file provided' });
     }
 
-    const processed = await processImage(req.file.buffer, 400, 400);
-    const filename = generateUniqueFilename('avatar.webp');
-    const avatarUrl = await uploadToR2(processed, filename, 'image/webp');
+    const avatarUrl = await processImage(req.file.buffer, 'avatar.webp');
 
     const user = await User.findByIdAndUpdate(userId, { avatarUrl }, { new: true });
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -1429,7 +1426,7 @@ app.post('/api/reels', async (req, res) => {
 
     // Send mention notifications
     if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString(), io);
+      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString());
     }
 
     // Send tag notifications to tagged users
@@ -1972,9 +1969,8 @@ app.post('/api/stories', uploadImage.single('media'), async (req, res) => {
       // Generate thumbnail if needed
     } else {
       // Image
-      const processed = await processImage(req.file.buffer);
       const filename = generateUniqueFilename('story.jpg');
-      mediaUrl = await uploadToR2(processed, filename, 'image/jpeg');
+      mediaUrl = await uploadToR2(req.file.buffer, filename, 'image/jpeg');
     }
 
     // Stories expire after 24 hours
@@ -2151,7 +2147,7 @@ app.get('/api/users/search/mentions', async (req, res) => {
         { username: { $regex: sanitizedQuery, $options: 'i' } },
         { name: { $regex: sanitizedQuery, $options: 'i' } }
       ],
-      _id: { $ne: currentUserId } // Exclude current user
+      ...(currentUserId ? { _id: { $ne: currentUserId as string } } : {})
     })
       .select('name username avatarUrl isVerified')
       .limit(10)
