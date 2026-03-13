@@ -177,8 +177,8 @@ export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewP
                           </button>
                         )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -241,10 +241,10 @@ export function SearchPanel({ currentUserId, initialQuery = '', onClose, onViewP
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </FriendlyCard>
     </div>
   );

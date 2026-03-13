@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog } from 'lucide-react';
+import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog, Sparkles, Users, CalendarDays, GraduationCap } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { ChatRoom } from './components/Chat/ChatRoom';
 import { CreatePost } from './components/CreatePost';
@@ -15,6 +15,7 @@ import { Dock } from '../components/ui/dock-two';
 import { ThemeSwitch } from './components/ui/ThemeSwitch';
 import { NotificationBell } from './components/NotificationBell';
 import { NotificationPanel } from './components/NotificationPanel';
+import socket from './services/socket';
 
 import { AdminDashboard } from './components/AdminDashboard';
 import { InstagramProfile } from './components/InstagramProfile';
@@ -23,6 +24,13 @@ import { PostOptions } from './components/PostOptions';
 import { SearchPanel } from './components/SearchPanel';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
 import { HashtagText } from './components/HashtagText';
+import { StoryViewer } from './components/StoryViewer';
+import { StoryUpload } from './components/StoryUpload';
+
+import { NotificationSettings, DEFAULT_NOTIFICATION_SETTINGS, normalizeNotificationSettings } from './utils/notificationSettings';
+import { CommunitySection, COMMUNITY_GROUPS, getGroupName, normalizeContentType, getVisibleCommunityPosts } from './utils/community';
+import { sortStoryGroups, StoryGroup } from './utils/stories';
+import { GHOST_MODE_MIN_ACCOUNT_AGE_DAYS, canUseGhostMode } from './utils/ghostPolicy';
 
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
@@ -49,10 +57,78 @@ export default function App() {
   const [selectedGroupId, setSelectedGroupId] = useState('all');
   const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
+  const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
+  const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
+  const [showStoryUpload, setShowStoryUpload] = useState(false);
 
   // Stable refs to avoid stale closures in socket effects
   const fetchChatsRef = useRef<(() => void) | null>(null);
   const chatDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Computed values
+  const ghostModeDisabled = !canUseGhostMode(user?.createdAt);
+  const visiblePosts = getVisibleCommunityPosts(posts, homeSection, selectedGroupId, joinedGroups);
+
+  // Notification settings labels for the UI
+  const notificationSettingLabels = [
+    { key: 'messages' as const, title: 'Direct Messages', description: 'New messages from other users' },
+    { key: 'comments' as const, title: 'Comments', description: 'Comments on your posts' },
+    { key: 'likes' as const, title: 'Likes', description: 'When someone likes your post' },
+    { key: 'follows' as const, title: 'Follows', description: 'New followers' },
+    { key: 'mentions' as const, title: 'Mentions', description: 'When someone mentions you' },
+    { key: 'shares' as const, title: 'Shares', description: 'When someone shares your post' },
+  ];
+
+  const toggleGhostMode = () => {
+    if (!ghostModeDisabled) {
+      setIsAnonymous(!isAnonymous);
+    }
+  };
+
+  const toggleGroupMembership = (groupId: string) => {
+    setJoinedGroups((prev) => {
+      if (prev.includes(groupId)) {
+        return prev.filter((id) => id !== groupId);
+      } else {
+        return [...prev, groupId];
+      }
+    });
+  };
+
+  const handleNotificationSettingToggle = async (key: keyof NotificationSettings) => {
+    if (!telegramNotificationsEnabled) return;
+
+    const updatedSettings = {
+      ...notificationSettings,
+      [key]: !notificationSettings[key],
+    };
+    setNotificationSettings(updatedSettings);
+
+    try {
+      const response = await fetch(`/api/users/${user?.id}/telegram-notifications`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: telegramNotificationsEnabled, settings: updatedSettings })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const nextSettings = normalizeNotificationSettings(data.notificationSettings);
+        setNotificationSettings(nextSettings);
+        const updatedUser = {
+          ...user,
+          telegramNotificationsEnabled: data.telegramNotificationsEnabled,
+          notificationSettings: nextSettings,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+      }
+    } catch (error) {
+      console.error('Failed to update notification settings:', error);
+      // Revert on error
+      setNotificationSettings(notificationSettings);
+    }
+  };
 
   const handleDoubleTapLike = async (postId: string) => {
     try {
@@ -556,15 +632,16 @@ export default function App() {
                       disabled={post.isAnonymous || !post.userId?._id}
                       className="flex items-center gap-3 text-left disabled:cursor-default"
                     >
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold hover:text-primary transition-colors">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
-                      <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
-                    </div>
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                        {post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (post.userId?.name?.[0] || 'U')}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold hover:text-primary transition-colors">{post.isAnonymous ? 'Ghost' : (post.userId?.name || 'User')}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(post.createdAt).toLocaleDateString()}</p>
+                      </div>
                     </button>
                   </div>
+                </div>
                 {post.mediaUrls && post.mediaUrls.length > 0 ? (
                   <ImageCarousel
                     images={post.mediaUrls}
