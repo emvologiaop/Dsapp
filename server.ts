@@ -171,6 +171,7 @@ function formatAuthUser(user: any) {
     username: user.username,
     email: user.email,
     department: user.department,
+    year: user.year,
     role: user.role,
     telegramAuthCode: user.telegramAuthCode,
     telegramChatId: user.telegramChatId,
@@ -405,7 +406,7 @@ app.get('/api/auth/check-username', async (req, res) => {
 
 app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
   try {
-    const { name, username, email, password, age, gender, department } = req.body;
+    const { name, username, email, password, age, gender, department, year } = req.body;
     if (!name || !username || !email || !password) {
       return res.status(400).json({ error: 'Name, username, email and password are required' });
     }
@@ -444,6 +445,7 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
       age: age ? Number(age) : undefined,
       gender,
       department,
+      year: year ? Number(year) : undefined,
       avatarUrl,
       telegramAuthCode,
     });
@@ -455,6 +457,7 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
         email: user.email,
         avatarUrl: user.avatarUrl,
         department: user.department,
+        year: user.year,
         telegramAuthCode: user.telegramAuthCode,
       },
     });

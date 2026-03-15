@@ -8,6 +8,7 @@ export interface IUser extends Document {
   age?: number;
   gender?: string;
   department?: string;
+  year?: number;
   avatarUrl?: string;
   bio?: string;
   website?: string;
@@ -53,6 +54,7 @@ const UserSchema = new Schema<IUser>(
     age: { type: Number },
     gender: { type: String, enum: ['male', 'female', 'other'] },
     department: { type: String },
+    year: { type: Number },
     avatarUrl: { type: String },
     bio: { type: String, maxlength: 150 },
     website: { type: String },

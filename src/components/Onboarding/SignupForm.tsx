@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, ArrowRight, CheckCircle2, Camera, Loader2, Plus } from 'lucide-react';
+import { User, AtSign, Calendar, Users, Mail, Lock, GraduationCap, ArrowLeft, ArrowRight, CheckCircle2, Camera, Loader2, Plus, BookOpen } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
 import { Input } from '../ui/Input';
 import { cn } from '../../lib/utils';
@@ -20,7 +20,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
     gender: '',
     email: '',
     password: '',
-    department: ''
+    department: '',
+    year: ''
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showTerms, setShowTerms] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Debounced username availability check
   useEffect(() => {
@@ -133,6 +135,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
       if (step < 4) {
         setStep(step + 1);
       } else {
+        setIsSubmitting(true);
         try {
           const submitData = new FormData();
           submitData.append('name', formData.name);
@@ -142,6 +145,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
           if (formData.age) submitData.append('age', formData.age);
           if (formData.gender) submitData.append('gender', formData.gender);
           if (formData.department) submitData.append('department', formData.department);
+          if (formData.year) submitData.append('year', formData.year);
           if (avatarFile) submitData.append('avatar', avatarFile);
 
           const response = await fetch('/api/auth/signup', {
@@ -166,6 +170,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
         } catch (error) {
           console.error("Signup error:", error);
           alert("An error occurred during signup.");
+        } finally {
+          setIsSubmitting(false);
         }
       }
     }
@@ -336,6 +342,30 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
             exit={{ opacity: 0, x: -20 }}
             className="space-y-4"
           >
+            {/* Profile Summary Card */}
+            <div className="p-4 rounded-xl bg-muted/50 border border-border">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full overflow-hidden bg-muted border-2 border-primary/30 shrink-0">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground truncate">{formData.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">@{formData.username}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <span>📧 {formData.email}</span>
+                <span>🎂 Age: {formData.age}</span>
+                {formData.gender && <span>👤 {formData.gender.charAt(0).toUpperCase() + formData.gender.slice(1)}</span>}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Input
                 label="Department (Optional)"
@@ -344,6 +374,19 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                 onChange={handleChange}
                 icon={<GraduationCap className="w-5 h-5" />}
               />
+            </div>
+            <div className="space-y-2">
+              <Input
+                label="Year (Optional)"
+                name="year"
+                type="number"
+                value={formData.year}
+                onChange={handleChange}
+                icon={<BookOpen className="w-5 h-5" />}
+              />
+              <p className="text-xs text-muted-foreground ml-1">
+                e.g. 1, 2, 3, 4 — your current academic year
+              </p>
             </div>
             <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -360,6 +403,34 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
 
   return (
     <div className="w-full max-w-md px-6 py-12 flex flex-col h-full">
+      {/* Full-screen creating account overlay */}
+      <AnimatePresence>
+        {isSubmitting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-background/90 backdrop-blur-sm flex flex-col items-center justify-center gap-6"
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
+            >
+              <Loader2 className="w-12 h-12 text-primary" />
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-center"
+            >
+              <p className="text-xl font-bold text-foreground">Creating your account</p>
+              <p className="text-sm text-muted-foreground mt-1">Setting everything up for you…</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="mb-8">
         <h2 className="text-3xl font-bold tracking-tighter text-primary">Create Profile</h2>
         <p className="text-muted-foreground">Step {step} of 4 — Telegram verification is required to finish registration.</p>
@@ -386,7 +457,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
         {step > 1 && (
           <button
             onClick={prevStep}
-            className="flex-1 py-4 bg-muted text-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
+            disabled={isSubmitting}
+            className="flex-1 py-4 bg-muted text-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
           >
             <ArrowLeft className="w-5 h-5" />
             Back
@@ -394,10 +466,25 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
         )}
         <button
           onClick={nextStep}
-          className="flex-[2] py-4 bg-primary text-primary-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95"
+          disabled={isSubmitting}
+          className="flex-[2] py-4 bg-primary text-primary-foreground font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
         >
-          {step === 4 ? "Complete" : "Continue"}
-          <ArrowRight className="w-5 h-5" />
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Creating…
+            </>
+          ) : step === 4 ? (
+            <>
+              Complete
+              <ArrowRight className="w-5 h-5" />
+            </>
+          ) : (
+            <>
+              Continue
+              <ArrowRight className="w-5 h-5" />
+            </>
+          )}
         </button>
       </div>
       {onSwitchToLogin && step === 1 && (
