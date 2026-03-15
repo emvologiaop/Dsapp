@@ -380,10 +380,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
               {errors.department && <p className="text-red-400 text-xs ml-1">{errors.department}</p>}
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground ml-1">Year</label>
+              <label htmlFor="year-select" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground ml-1">Year</label>
               <div className="relative">
                 <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <select
+                  id="year-select"
                   name="year"
                   value={formData.year}
                   onChange={handleChange}
