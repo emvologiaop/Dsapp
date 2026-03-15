@@ -407,8 +407,8 @@ app.get('/api/auth/check-username', async (req, res) => {
 app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
   try {
     const { name, username, email, password, age, gender, department, year } = req.body;
-    if (!name || !username || !email || !password) {
-      return res.status(400).json({ error: 'Name, username, email and password are required' });
+    if (!name || !username || !email || !password || !department || !year) {
+      return res.status(400).json({ error: 'Name, username, email, password, department and year are required' });
     }
 
     // Validate username format (Instagram-like: lowercase, numbers, underscores, periods)
@@ -445,7 +445,7 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
       age: age ? Number(age) : undefined,
       gender,
       department,
-      year: year ? Number(year) : undefined,
+      year,
       avatarUrl,
       telegramAuthCode,
     });

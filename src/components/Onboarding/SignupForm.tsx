@@ -125,6 +125,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
       } else if (!passwordRegex.test(formData.password)) {
         newErrors.password = "8+ chars, Upper, Lower, Num, Symbol";
       }
+    } else if (step === 4) {
+      if (!formData.department) newErrors.department = "Department is required";
+      if (!formData.year) newErrors.year = "Year is required";
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -144,8 +147,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
           submitData.append('password', formData.password);
           if (formData.age) submitData.append('age', formData.age);
           if (formData.gender) submitData.append('gender', formData.gender);
-          if (formData.department) submitData.append('department', formData.department);
-          if (formData.year) submitData.append('year', formData.year);
+          submitData.append('department', formData.department);
+          submitData.append('year', formData.year);
           if (avatarFile) submitData.append('avatar', avatarFile);
 
           const response = await fetch('/api/auth/signup', {
@@ -368,27 +371,36 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
 
             <div className="space-y-2">
               <Input
-                label="Department (Optional)"
+                label="Department"
                 name="department"
                 value={formData.department}
                 onChange={handleChange}
                 icon={<GraduationCap className="w-5 h-5" />}
               />
+              {errors.department && <p className="text-red-400 text-xs ml-1">{errors.department}</p>}
             </div>
             <div className="space-y-2">
-              <Input
-                label="Year (Optional)"
-                name="year"
-                type="number"
-                value={formData.year}
-                onChange={handleChange}
-                icon={<BookOpen className="w-5 h-5" />}
-                min={1}
-                max={6}
-              />
-              <p className="text-xs text-muted-foreground ml-1">
-                e.g. 1, 2, 3, 4 — your current academic year
-              </p>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground ml-1">Year</label>
+              <div className="relative">
+                <BookOpen className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <select
+                  name="year"
+                  value={formData.year}
+                  onChange={handleChange}
+                  className="w-full bg-muted border border-border rounded-xl py-4 pl-12 pr-4 focus:border-primary outline-none transition-all appearance-none text-foreground"
+                >
+                  <option value="" className="bg-background">Select Year</option>
+                  <option value="remedial" className="bg-background">Remedial</option>
+                  <option value="1" className="bg-background">1st Year</option>
+                  <option value="2" className="bg-background">2nd Year</option>
+                  <option value="3" className="bg-background">3rd Year</option>
+                  <option value="4" className="bg-background">4th Year</option>
+                  <option value="5" className="bg-background">5th Year</option>
+                  <option value="6" className="bg-background">6th Year</option>
+                  <option value="7" className="bg-background">7th Year</option>
+                </select>
+              </div>
+              {errors.year && <p className="text-red-400 text-xs ml-1">{errors.year}</p>}
             </div>
             <div className="p-4 rounded-xl bg-primary/10 border border-primary/20 flex items-start gap-3">
               <CheckCircle2 className="w-5 h-5 text-primary shrink-0 mt-0.5" />
