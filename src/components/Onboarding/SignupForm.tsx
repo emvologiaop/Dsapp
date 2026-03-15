@@ -361,7 +361,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                 <span>📧 {formData.email}</span>
-                <span>🎂 Age: {formData.age}</span>
+                {formData.age && <span>🎂 Age: {formData.age}</span>}
                 {formData.gender && <span>👤 {formData.gender.charAt(0).toUpperCase() + formData.gender.slice(1)}</span>}
               </div>
             </div>
@@ -383,6 +383,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onComplete, onSwitchToLo
                 value={formData.year}
                 onChange={handleChange}
                 icon={<BookOpen className="w-5 h-5" />}
+                min={1}
+                max={6}
               />
               <p className="text-xs text-muted-foreground ml-1">
                 e.g. 1, 2, 3, 4 — your current academic year
