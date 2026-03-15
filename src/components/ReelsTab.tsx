@@ -54,7 +54,7 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user, onViewProfile, onHasht
   const [showShare, setShowShare] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [useR2Upload, setUseR2Upload] = useState(true); // Toggle for R2 vs base64
+  const useR2Upload = false; // Use legacy base64 upload
   const videoRef = useRef<HTMLVideoElement>(null);
   const y = useMotionValue(0);
   const opacity = useTransform(y, [-200, 0, 200], [0.5, 1, 0.5]);
@@ -257,7 +257,7 @@ export const ReelsTab: React.FC<ReelsTabProps> = ({ user, onViewProfile, onHasht
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {uploadProgress < 100 ? (useR2Upload ? 'Uploading to R2...' : 'Compressing & uploading...') : 'Complete!'}
+                  {uploadProgress < 100 ? 'Uploading...' : 'Complete!'}
                 </span>
                 <span className="font-bold text-primary">{uploadProgress}%</span>
               </div>
