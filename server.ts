@@ -2978,8 +2978,10 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`DDU Social server running on http://localhost:${PORT}`);
-});
+if (!process.env.VERCEL) {
+  httpServer.listen(PORT, () => {
+    console.log(`DDU Social server running on http://localhost:${PORT}`);
+  });
+}
 
 export default app;

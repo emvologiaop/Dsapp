@@ -2,6 +2,11 @@
   "version": 2,
   "name": "dsapp-social",
   "buildCommand": "npm run vercel-build",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "dist/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
