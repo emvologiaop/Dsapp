@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "name": "dsapp-social",
+  "buildCommand": "npm run vercel-build",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
