@@ -8,3 +8,4 @@ coverage/
 !.env.example
 ddusocial.db
 package-lock.json
+public/uploads/
