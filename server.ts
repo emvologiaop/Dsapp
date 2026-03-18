@@ -17,18 +17,17 @@ import { Message } from './src/models/Message.js';
 import { Notification } from './src/models/Notification.js';
 import { Share } from './src/models/Share.js';
 import { Comment } from './src/models/Comment.js';
-import { Reel } from './src/models/Reel.js';
-import { VideoView } from './src/models/VideoView.js';
 import { Ad } from './src/models/Ad.js';
 import { Report } from './src/models/Report.js';
 import { Story } from './src/models/Story.js';
 import { SystemSettings } from './src/models/SystemSettings.js';
-import { uploadVideo, uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
-import { processVideo, processImage } from './src/services/videoProcessor.js';
+import { uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
+import { processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
-import { getPersonalizedReels, getTrendingReels } from './src/services/recommendationService.js';
-import { authenticate, requireAdmin, requirePostOwnership, requireReelOwnership } from './src/middleware/auth.js';
+import { authenticate, requireAdmin, requirePostOwnership } from './src/middleware/auth.js';
 import { extractHashtags, normalizeHashtagQuery } from './src/utils/socialText.js';
+import { rankFeedPosts } from './src/utils/feedRanking.js';
+import { buildUserSuggestions, getMutualFriendIds } from './src/utils/socialGraph.js';
 import { sanitizeSearchQuery } from './src/utils/validation.js';
 import { getActorRateLimitKey, getRequestOrigin, isOriginAllowed, shouldBypassOriginCheck } from './src/utils/requestSecurity.js';
 
@@ -115,11 +114,11 @@ const uploadLimiter = rateLimit({
 app.use('/api/auth', authLimiter);
 app.use('/api/search', searchLimiter);
 app.use('/api/users/search/mentions', searchLimiter);
-app.use(['/api/posts', '/api/reels', '/api/comments', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
+app.use(['/api/posts', '/api/comments', '/api/reports', '/api/notifications', '/api/stories'], mutationLimiter);
 app.use('/api/users/:targetId/follow', mutationLimiter);
 app.use('/api/users/:userId/profile', mutationLimiter);
 app.use('/api/users/:userId/telegram-notifications', mutationLimiter);
-app.use(['/api/images', '/api/reels/upload-r2', '/api/stories'], uploadLimiter);
+app.use(['/api/images', '/api/stories'], uploadLimiter);
 
 // Ensure MongoDB connection is ready before handling API requests
 app.use('/api', async (req, res, next) => {
@@ -164,6 +163,47 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   mentions: true,
   shares: true,
 };
+
+function getAppBaseUrl(req?: any): string {
+  const explicit = (process.env.APP_URL || '').trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+  const origin = req?.headers?.origin?.toString?.();
+  if (origin) return origin.replace(/\/$/, '');
+  return '';
+}
+
+async function sendTelegramMessageNotification(input: {
+  receiverUserId: string;
+  senderUserId: string;
+  messageId: string;
+  textPreview: string;
+  req?: any;
+}) {
+  try {
+    if (!bot) return;
+    const receiver = await User.findById(input.receiverUserId).select('telegramChatId telegramNotificationsEnabled notificationSettings').lean();
+    if (!receiver?.telegramChatId) return;
+    if (!receiver.telegramNotificationsEnabled) return;
+    if (receiver.notificationSettings?.messages === false) return;
+
+    const base = getAppBaseUrl(input.req);
+    const link = base
+      ? `${base}/?chatWith=${encodeURIComponent(input.senderUserId)}&messageId=${encodeURIComponent(input.messageId)}`
+      : null;
+
+    const safePreview = (input.textPreview || '').trim().slice(0, 140);
+    const body =
+      `💬 New message\n\n` +
+      (safePreview ? `“${safePreview}”\n\n` : '') +
+      (link ? `Open: ${link}` : 'Open the app to reply.');
+
+    await bot.sendMessage(Number(receiver.telegramChatId), body, {
+      disable_web_page_preview: true,
+    });
+  } catch (e) {
+    console.error('Failed to send Telegram message notification:', e);
+  }
+}
 
 function normalizeNotificationSettings(input: any) {
   return {
@@ -237,9 +277,95 @@ function serializeAuthUser(user: AuthUserFields) {
   };
 }
 
-// ── Socket.IO ─────────────────────────────────────────────────────────────────
+// -- Socket.IO -----------------------------------------------------------------
 // Track online users
 const onlineUsers = new Map<string, string>(); // userId -> socketId
+
+async function getMessagingAccess(senderId: string, receiverId: string) {
+  const [sender, receiver] = await Promise.all([
+    User.findById(senderId).select('name followingIds followerIds notificationSettings').lean(),
+    User.findById(receiverId).select('followingIds followerIds').lean(),
+  ]);
+
+  if (!sender || !receiver) {
+    return { allowed: false as const, error: 'Chat user not found.' };
+  }
+
+  const senderFollowsReceiver = sender.followingIds.some((id) => id.toString() === receiverId);
+  const receiverFollowsSender = receiver.followingIds.some((id) => id.toString() === senderId);
+
+  if (!senderFollowsReceiver || !receiverFollowsSender) {
+    return { allowed: false as const, error: 'You can only message users after you both follow each other.' };
+  }
+
+  return { allowed: true as const, sender };
+}
+
+async function createAndBroadcastDirectMessage(data: {
+  senderId: string;
+  receiverId: string;
+  text: string;
+  imageUrl?: string;
+  replyToId?: string;
+  tempId?: string;
+  req?: any;
+}) {
+  const trimmedText = data.text?.trim();
+  if (!data.senderId || !data.receiverId || !trimmedText) {
+    return { ok: false as const, error: 'Message text is required.' };
+  }
+
+  const access = await getMessagingAccess(data.senderId, data.receiverId);
+  if (!access.allowed) {
+    return { ok: false as const, error: access.error };
+  }
+
+  const message = await Message.create({
+    senderId: data.senderId,
+    receiverId: data.receiverId,
+    text: trimmedText,
+    imageUrl: data.imageUrl,
+    replyToId: data.replyToId,
+    status: 'sent',
+  });
+
+  const populatedMessage = await Message.findById(message._id)
+    .populate('replyToId', 'text senderId')
+    .lean();
+
+  io.to(`user_${data.receiverId}`).emit('receive_private_message', populatedMessage);
+  io.to(`user_${data.senderId}`).emit('message_sent', {
+    message: populatedMessage,
+    tempId: data.tempId
+  });
+  io.to(`user_${data.senderId}`).emit('message_status', {
+    messageId: message._id.toString(),
+    status: 'delivered'
+  });
+
+  await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
+
+  if (access.sender.notificationSettings?.messages !== false) {
+    const notification = await Notification.create({
+      userId: data.receiverId,
+      type: 'message',
+      content: `${access.sender.name} sent you a message`,
+      relatedUserId: data.senderId,
+    });
+    io.to(`user_${data.receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
+  }
+
+  // Telegram push (only if receiver enabled Telegram notifications for messages)
+  await sendTelegramMessageNotification({
+    receiverUserId: data.receiverId,
+    senderUserId: data.senderId,
+    messageId: message._id.toString(),
+    textPreview: trimmedText,
+    req: data.req,
+  });
+
+  return { ok: true as const, message: populatedMessage, messageId: message._id.toString() };
+}
 
 io.on('connection', (socket) => {
   socket.on('join_chat', (userId: string) => {
@@ -268,50 +394,16 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('send_private_message', async (data: { senderId: string; receiverId: string; text: string; imageUrl?: string; replyToId?: string; tempId?: string }) => {
+  socket.on('send_private_message', async (
+    data: { senderId: string; receiverId: string; text: string; imageUrl?: string; replyToId?: string; tempId?: string },
+    callback?: (result: { ok: boolean; error?: string; messageId?: string }) => void
+  ) => {
     try {
-      const message = await Message.create({
-        senderId: data.senderId,
-        receiverId: data.receiverId,
-        text: data.text,
-        imageUrl: data.imageUrl,
-        replyToId: data.replyToId,
-        status: 'sent',
-      });
-
-      const populatedMessage = await Message.findById(message._id)
-        .populate('replyToId', 'text senderId')
-        .lean();
-
-      // Send to receiver
-      io.to(`user_${data.receiverId}`).emit('receive_private_message', populatedMessage);
-
-      // Send back to sender with actual populated message and tempId
-      io.to(`user_${data.senderId}`).emit('message_sent', {
-        message: populatedMessage,
-        tempId: data.tempId
-      });
-      // Also send message_status for legacy or immediate status update
-      io.to(`user_${data.senderId}`).emit('message_status', {
-        messageId: message._id.toString(),
-        status: 'delivered'
-      });
-
-      // Update status to delivered
-      await Message.findByIdAndUpdate(message._id, { status: 'delivered' });
-
-      const sender = await User.findById(data.senderId).lean();
-      if (sender) {
-        const notification = await Notification.create({
-          userId: data.receiverId,
-          type: 'message',
-          content: `${sender.name} sent you a message`,
-          relatedUserId: data.senderId,
-        });
-        io.to(`user_${data.receiverId}`).emit('new_notification', { ...notification.toObject(), id: notification._id.toString() });
-      }
+      const result = await createAndBroadcastDirectMessage(data);
+      callback?.(result.ok ? { ok: true, messageId: result.messageId } : { ok: false, error: result.error });
     } catch (error) {
       console.error('Socket send_private_message error:', error);
+      callback?.({ ok: false, error: 'Failed to send message.' });
     }
   });
 
@@ -408,7 +500,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// ── Auth Routes ────────────────────────────────────────────────────────────────
+// -- Auth Routes ----------------------------------------------------------------
 
 // Check username availability
 app.get('/api/auth/check-username', async (req, res) => {
@@ -458,6 +550,13 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
     }
 
     const telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
+    const configuredAdminEmails = [
+      ...(process.env.ADMIN_EMAILS || '').split(','),
+      process.env.ADMIN_EMAIL || '',
+    ]
+      .map((e) => e.toLowerCase().trim())
+      .filter(Boolean);
+    const isAdminEmail = configuredAdminEmails.includes(email.toLowerCase());
     const user = await User.create({
       name,
       username: username.toLowerCase(),
@@ -469,6 +568,7 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
       year,
       avatarUrl,
       telegramAuthCode,
+      ...(isAdminEmail ? { role: 'admin' } : {}),
     });
     res.status(201).json({
       user: {
@@ -480,6 +580,7 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
         department: user.department,
         year: user.year,
         telegramAuthCode: user.telegramAuthCode,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -498,6 +599,20 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    // Ensure the configured admin email is always promoted to admin.
+    // This keeps admin access stable even if the user was created before seeding.
+    const configuredAdminEmails = [
+      ...(process.env.ADMIN_EMAILS || '').split(','),
+      process.env.ADMIN_EMAIL || '',
+    ]
+      .map((e) => e.toLowerCase().trim())
+      .filter(Boolean);
+    if (configuredAdminEmails.includes(user.email.toLowerCase()) && user.role !== 'admin') {
+      user.role = 'admin';
+      await user.save();
+    }
+
     res.json({
       user: formatAuthUser(user),
     });
@@ -529,7 +644,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       try {
         bot?.sendMessage?.(
           Number(user.telegramChatId),
-          `🔐 DDU Social password reset code: *${code}*\n\nThis code expires in 15 minutes.`,
+          `?? DDU Social password reset code: *${code}*\n\nThis code expires in 15 minutes.`,
           { parse_mode: 'Markdown' }
         );
       } catch (e) {
@@ -621,7 +736,7 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
   }
 });
 
-// ── Post Routes ────────────────────────────────────────────────────────────────
+// -- Post Routes ----------------------------------------------------------------
 
 app.get('/api/posts', async (req, res) => {
   try {
@@ -637,26 +752,42 @@ app.get('/api/posts', async (req, res) => {
       .select('userId title content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers contentType groupId place eventTime approvalStatus')
       .sort({ createdAt: -1 })
       .limit(limit)
-      .populate('userId', 'name username avatarUrl')
+      .populate('userId', 'name username avatarUrl followerIds')
       .lean();
 
     let followingSet = new Set<string>();
+    let connectionSet = new Set<string>();
     if (userId) {
-      const currentUser = await User.findById(userId).lean();
+      const currentUser = await User.findById(userId).select('followingIds followerIds').lean();
       if (currentUser) {
         followingSet = new Set(currentUser.followingIds.map((id) => id.toString()));
+        connectionSet = new Set([
+          ...currentUser.followingIds.map((id) => id.toString()),
+          ...currentUser.followerIds.map((id) => id.toString()),
+        ]);
       }
     }
 
     const enriched = posts.map((post: any) => ({
       ...post,
+      userId: post.userId
+        ? {
+            _id: post.userId._id,
+            name: post.userId.name,
+            username: post.userId.username,
+            avatarUrl: post.userId.avatarUrl || '',
+          }
+        : null,
       likesCount: post.likedBy.length,
       isLiked: userId ? post.likedBy.some((id: any) => id.toString() === userId.toString()) : false,
       isBookmarked: userId ? post.bookmarkedBy.some((id: any) => id.toString() === userId.toString()) : false,
       isFollowing: post.userId ? followingSet.has(post.userId._id.toString()) : false,
+      mutualCount: post.userId
+        ? post.userId.followerIds?.filter?.((id: any) => connectionSet.has(id.toString())).length || 0
+        : 0,
     }));
 
-    res.json(enriched);
+    res.json(rankFeedPosts(enriched));
   } catch (error) {
     console.error('GET /api/posts error:', error);
     res.status(500).json({ error: 'Failed to fetch posts' });
@@ -851,7 +982,7 @@ app.post('/api/posts/:postId/share', async (req, res) => {
         const message = await Message.create({
           senderId: userId,
           receiverId,
-          text: `📌 Shared a post: ${postId}`,
+          text: `?? Shared a post: ${postId}`,
           status: 'sent',
         });
         io.to(`user_${receiverId}`).emit('receive_private_message', message.toObject());
@@ -915,7 +1046,7 @@ app.post('/api/posts/:postId/comments', async (req, res) => {
   }
 });
 
-// ── Comment Replies Routes ────────────────────────────────────────────────────
+// -- Comment Replies Routes ----------------------------------------------------
 
 // Get replies to a specific comment
 app.get('/api/comments/:commentId/replies', async (req, res) => {
@@ -990,7 +1121,7 @@ app.post('/api/comments/:commentId/reply', async (req, res) => {
   }
 });
 
-// ── Report Routes ──────────────────────────────────────────────────────────────
+// -- Report Routes --------------------------------------------------------------
 
 // Create a report (post, user, bug, or suggestion)
 app.post('/api/reports', async (req, res) => {
@@ -1101,7 +1232,7 @@ app.put('/api/posts/:postId', authenticate, requirePostOwnership, async (req, re
   }
 });
 
-// ── User Routes ────────────────────────────────────────────────────────────────
+// -- User Routes ----------------------------------------------------------------
 
 app.post('/api/users/:targetId/follow', async (req, res) => {
   try {
@@ -1159,6 +1290,64 @@ app.get('/api/users/:userId/mutuals', async (req, res) => {
   }
 });
 
+app.get('/api/users/:userId/suggestions', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit as string) || 6, 12);
+    const user = await User.findById(userId).select('followingIds followerIds').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const excludedIds = new Set([userId, ...user.followingIds.map((id) => id.toString())]);
+
+    const candidates = await User.find({ _id: { $nin: Array.from(excludedIds) } })
+      .select('name username avatarUrl isVerified badgeType followerIds createdAt')
+      .sort({ createdAt: -1 })
+      .limit(60)
+      .lean();
+    const previewIds = new Set<string>();
+    candidates.forEach((candidate) => {
+      getMutualFriendIds(
+        candidate.followerIds,
+        [
+          ...user.followingIds.map((id) => id.toString()),
+          ...user.followerIds.map((id) => id.toString()),
+        ],
+        userId
+      )
+        .slice(0, 3)
+        .forEach((id) => previewIds.add(id));
+    });
+    const previewUsers = previewIds.size > 0
+      ? await User.find({ _id: { $in: Array.from(previewIds) } }).select('name username avatarUrl').lean()
+      : [];
+    const suggestions = buildUserSuggestions(
+      userId,
+      user.followingIds,
+      user.followerIds,
+      candidates.map((candidate) => ({
+        id: candidate._id.toString(),
+        name: candidate.name,
+        username: candidate.username,
+        avatarUrl: candidate.avatarUrl || '',
+        isVerified: candidate.isVerified || false,
+        badgeType: candidate.badgeType || 'none',
+        followerIds: candidate.followerIds,
+      })),
+      previewUsers.map((preview) => ({
+        id: preview._id.toString(),
+        name: preview.name,
+        username: preview.username,
+        avatarUrl: preview.avatarUrl || '',
+      })),
+      limit
+    );
+
+    res.json(suggestions);
+  } catch (error) {
+    console.error('GET /api/users/:userId/suggestions error:', error);
+    res.status(500).json({ error: 'Failed to fetch suggestions' });
+  }
+});
+
 app.get('/api/users/:userId/inbox', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1203,9 +1392,34 @@ app.get('/api/users/:userId/profile', async (req, res) => {
     const user = await User.findById(userId).lean();
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const isFollowing = currentUserId
-      ? user.followerIds.some((id) => id.toString() === currentUserId.toString())
+    const normalizedCurrentUserId = typeof currentUserId === 'string' ? currentUserId : '';
+    const currentUser = normalizedCurrentUserId
+      ? await User.findById(normalizedCurrentUserId).select('followingIds followerIds department year').lean()
+      : null;
+    const isFollowing = normalizedCurrentUserId
+      ? user.followerIds.some((id) => id.toString() === normalizedCurrentUserId)
       : false;
+    const followsYou = normalizedCurrentUserId
+      ? user.followingIds.some((id) => id.toString() === normalizedCurrentUserId)
+      : false;
+    const currentConnectionIds = currentUser
+      ? new Set([
+          ...currentUser.followingIds.map((id) => id.toString()),
+          ...currentUser.followerIds.map((id) => id.toString()),
+        ])
+      : new Set<string>();
+    const mutualFriendIds = getMutualFriendIds(user.followerIds, currentConnectionIds, normalizedCurrentUserId);
+    const mutualFriends = mutualFriendIds.length > 0
+      ? await User.find({ _id: { $in: mutualFriendIds.slice(0, 3) } }).select('name username avatarUrl').lean()
+      : [];
+    const sharedContexts = [
+      currentUser?.department && user.department && currentUser.department === user.department
+        ? `${user.department} department`
+        : null,
+      currentUser?.year && user.year && currentUser.year === user.year
+        ? `Year ${user.year}`
+        : null,
+    ].filter(Boolean);
 
     res.json({
       id: user._id.toString(),
@@ -1222,6 +1436,16 @@ app.get('/api/users/:userId/profile', async (req, res) => {
       followersCount: user.followerIds.length,
       followingCount: user.followingIds.length,
       isFollowing,
+      followsYou,
+      canMessage: isFollowing && followsYou,
+      mutualFriendsCount: mutualFriendIds.length,
+      mutualFriends: mutualFriends.map((mutual) => ({
+        id: mutual._id.toString(),
+        name: mutual.name,
+        username: mutual.username,
+        avatarUrl: mutual.avatarUrl || '',
+      })),
+      sharedContexts,
     });
   } catch (error) {
     console.error('GET /api/users/:userId/profile error:', error);
@@ -1360,37 +1584,6 @@ app.get('/api/users/:userId/posts', async (req, res) => {
   }
 });
 
-app.get('/api/users/:userId/reels', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const currentUserId = req.query.currentUserId?.toString();
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const skip = (page - 1) * limit;
-
-    const [reels, total] = await Promise.all([
-      Reel.find({ userId, isDeleted: { $ne: true } })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Reel.countDocuments({ userId, isDeleted: { $ne: true } }),
-    ]);
-
-    const enrichedReels = reels.map((reel: any) => ({
-      ...reel,
-      likesCount: reel.likedBy?.length || 0,
-      isLiked: currentUserId ? reel.likedBy?.some((id: any) => id.toString() === currentUserId) : false,
-      isBookmarked: currentUserId ? reel.bookmarkedBy?.some((id: any) => id.toString() === currentUserId) : false,
-    }));
-
-    res.json({ reels: enrichedReels, total, page, limit, pages: Math.ceil(total / limit) });
-  } catch (error) {
-    console.error('GET /api/users/:userId/reels error:', error);
-    res.status(500).json({ error: 'Failed to fetch reels' });
-  }
-});
-
 app.get('/api/users/:userId/saved', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1401,25 +1594,15 @@ app.get('/api/users/:userId/saved', async (req, res) => {
       return res.status(403).json({ error: 'Saved content is private' });
     }
 
-    const [posts, reels] = await Promise.all([
-      Post.find({
-        bookmarkedBy: userId,
-        isDeleted: { $ne: true },
-        isAnonymous: false,
-      })
-        .populate('userId', 'name username avatarUrl')
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .lean(),
-      Reel.find({
-        bookmarkedBy: userId,
-        isDeleted: { $ne: true },
-      })
-        .populate('userId', 'name username avatarUrl')
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .lean(),
-    ]);
+    const posts = await Post.find({
+      bookmarkedBy: userId,
+      isDeleted: { $ne: true },
+      isAnonymous: false,
+    })
+      .populate('userId', 'name username avatarUrl')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
 
     res.json({
       posts: posts.map((post: any) => ({
@@ -1427,13 +1610,6 @@ app.get('/api/users/:userId/saved', async (req, res) => {
         type: 'post',
         likesCount: post.likedBy?.length || 0,
         isLiked: post.likedBy?.some((id: any) => id.toString() === userId) || false,
-        isBookmarked: true,
-      })),
-      reels: reels.map((reel: any) => ({
-        ...reel,
-        type: 'reel',
-        likesCount: reel.likedBy?.length || 0,
-        isLiked: reel.likedBy?.some((id: any) => id.toString() === userId) || false,
         isBookmarked: true,
       })),
     });
@@ -1447,16 +1623,30 @@ app.get('/api/users/:userId/chats', async (req, res) => {
   try {
     const { userId } = req.params;
     const messages = await Message.find({ $or: [{ senderId: userId }, { receiverId: userId }] })
-      .select('senderId receiverId text createdAt')
+      .select('senderId receiverId text createdAt isRead status')
       .sort({ createdAt: -1 })
       .lean();
 
     // Collect last message per unique conversation partner (no N+1)
-    const seen = new Map<string, { text: string; createdAt: Date }>();
+    const seen = new Map<string, { text: string; createdAt: Date; isRead: boolean; status?: string; unreadCount: number; isMine: boolean }>();
     for (const msg of messages) {
       const otherId = msg.senderId.toString() === userId ? msg.receiverId.toString() : msg.senderId.toString();
       if (!seen.has(otherId)) {
-        seen.set(otherId, { text: msg.text, createdAt: msg.createdAt });
+        seen.set(otherId, {
+          text: msg.text,
+          createdAt: msg.createdAt,
+          isRead: Boolean(msg.isRead),
+          status: msg.status,
+          unreadCount: 0,
+          isMine: msg.senderId.toString() === userId,
+        });
+      }
+
+      if (msg.receiverId.toString() === userId && msg.senderId.toString() === otherId && !msg.isRead) {
+        const conversation = seen.get(otherId);
+        if (conversation) {
+          conversation.unreadCount += 1;
+        }
       }
     }
 
@@ -1482,7 +1672,7 @@ app.get('/api/users/:userId/chats', async (req, res) => {
   }
 });
 
-// ── Message Routes ─────────────────────────────────────────────────────────────
+// -- Message Routes -------------------------------------------------------------
 
 app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
   try {
@@ -1503,7 +1693,65 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
   }
 });
 
-// ── Notification Routes ────────────────────────────────────────────────────────
+app.post('/api/messages', async (req, res) => {
+  try {
+    const { senderId, receiverId, text, imageUrl, replyToId, tempId } = req.body;
+    const result = await createAndBroadcastDirectMessage({ senderId, receiverId, text, imageUrl, replyToId, tempId, req });
+
+    if (!result.ok) {
+      return res.status(result.error === 'Chat user not found.' ? 404 : 400).json({ error: result.error });
+    }
+
+    res.status(201).json({ message: result.message });
+  } catch (error) {
+    console.error('POST /api/messages error:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+app.post('/api/messages/read', async (req, res) => {
+  try {
+    const { userId, otherUserId } = req.body;
+
+    if (!userId || !otherUserId) {
+      return res.status(400).json({ error: 'userId and otherUserId are required' });
+    }
+
+    const unreadMessages = await Message.find({
+      senderId: otherUserId,
+      receiverId: userId,
+      isRead: false,
+    })
+      .select('_id senderId')
+      .lean();
+
+    if (unreadMessages.length === 0) {
+      return res.json({ updated: 0 });
+    }
+
+    const ids = unreadMessages.map((message) => message._id);
+
+    await Message.updateMany(
+      { _id: { $in: ids } },
+      { isRead: true, readAt: new Date(), status: 'seen' }
+    );
+
+    unreadMessages.forEach((message) => {
+      io.to(`user_${message.senderId.toString()}`).emit('message_status', {
+        messageId: message._id.toString(),
+        status: 'seen',
+        readAt: new Date(),
+      });
+    });
+
+    res.json({ updated: unreadMessages.length });
+  } catch (error) {
+    console.error('POST /api/messages/read error:', error);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+});
+
+// -- Notification Routes --------------------------------------------------------
 
 app.get('/api/notifications/:userId', async (req, res) => {
   try {
@@ -1527,7 +1775,7 @@ app.post('/api/notifications/:id/read', async (req, res) => {
   }
 });
 
-// ── Telegram Webhook ───────────────────────────────────────────────────────────
+// -- Telegram Webhook -----------------------------------------------------------
 app.post('/api/telegram/webhook', async (req, res) => {
   try {
     if (!bot) {
@@ -1553,433 +1801,6 @@ app.post('/api/telegram/webhook', async (req, res) => {
   }
 });
 
-// ── Reels Routes ───────────────────────────────────────────────────────────────
-
-app.get('/api/reels', async (req, res) => {
-  try {
-    const { userId, page = '0', trending = 'false' } = req.query;
-    const limit = Math.min(parseInt(req.query.limit as string) || 30, 60);
-    const offset = parseInt(page as string) * limit;
-
-    let reels;
-
-    if (trending === 'true' || !userId) {
-      // Show trending content for new users or when explicitly requested
-      reels = await getTrendingReels(limit, offset);
-    } else {
-      // Show personalized recommendations
-      try {
-        reels = await getPersonalizedReels(userId as string, limit, offset);
-
-        // Fallback to trending if personalization fails or returns empty
-        if (reels.length === 0) {
-          reels = await getTrendingReels(limit, offset);
-        }
-      } catch (error) {
-        console.error('Personalization error, falling back to trending:', error);
-        reels = await getTrendingReels(limit, offset);
-      }
-    }
-
-    // Enrich with user-specific data
-    const enriched = reels.map((reel: any) => ({
-      ...reel,
-      userId: reel.user ? { _id: reel.user._id, name: reel.user.name, username: reel.user.username, avatarUrl: reel.user.avatarUrl } : null,
-      likesCount: reel.likedBy?.length || 0,
-      isLiked: userId ? reel.likedBy?.some((id: any) => id.toString() === userId.toString()) : false,
-      isBookmarked: userId ? reel.bookmarkedBy?.some((id: any) => id.toString() === userId.toString()) : false,
-    }));
-
-    res.json(enriched);
-  } catch (error) {
-    console.error('GET /api/reels error:', error);
-    res.status(500).json({ error: 'Failed to fetch reels' });
-  }
-});
-
-app.post('/api/reels', async (req, res) => {
-  try {
-    const { userId, caption, videoData, isAnonymous, taggedUsers } = req.body;
-    if (!userId || !videoData) {
-      return res.status(400).json({ error: 'userId and videoData are required' });
-    }
-
-    // Extract mentions from caption
-    const normalizedCaption = typeof caption === 'string' ? caption.trim() : '';
-    const mentions = normalizedCaption ? extractMentions(normalizedCaption) : [];
-    const hashtags = normalizedCaption ? extractHashtags(normalizedCaption) : [];
-
-    // Store base64 data URL as the video URL (suitable for moderate-size videos)
-    const reel = await Reel.create({
-      userId,
-      videoUrl: videoData,
-      caption: normalizedCaption,
-      isAnonymous: parseBooleanFlag(isAnonymous),
-      taggedUsers: taggedUsers || [],
-      mentions,
-      hashtags,
-    });
-
-    // Send mention notifications
-    if (mentions.length > 0 && !isAnonymous) {
-      await sendMentionNotifications(userId, mentions, 'reel', reel._id.toString());
-    }
-
-    // Send tag notifications to tagged users
-    if (taggedUsers && taggedUsers.length > 0 && !isAnonymous) {
-      const tagger = await User.findById(userId).lean();
-      if (tagger) {
-        const filteredTaggedUsers = taggedUsers.filter((id: string) => id !== userId);
-        if (filteredTaggedUsers.length > 0) {
-          const reelTagNotifications = filteredTaggedUsers.map((taggedUserId: string) => ({
-            userId: taggedUserId,
-            type: 'tag',
-            content: `${tagger.name} tagged you in a reel`,
-            relatedUserId: userId,
-            relatedPostId: reel._id,
-          }));
-          const createdReelTagNotifications = await Notification.insertMany(reelTagNotifications);
-          createdReelTagNotifications.forEach((notif, idx) => {
-            io.to(`user_${filteredTaggedUsers[idx]}`).emit('new_notification', {
-              ...notif.toObject(),
-              id: notif._id.toString(),
-            });
-          });
-        }
-      }
-    }
-
-    const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
-    res.status(201).json(populated);
-  } catch (error) {
-    console.error('POST /api/reels error:', error);
-    res.status(500).json({ error: 'Failed to create reel' });
-  }
-});
-
-app.post('/api/reels/:reelId/like', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId } = req.body;
-    const reel = await Reel.findByIdAndUpdate(reelId, { $addToSet: { likedBy: userId } }, { new: true });
-    if (!reel) return res.status(404).json({ error: 'Reel not found' });
-    res.json({ reelId, userId, liked: true, likesCount: reel.likedBy.length });
-  } catch (error) {
-    console.error('POST /api/reels/:reelId/like error:', error);
-    res.status(500).json({ error: 'Failed to like reel' });
-  }
-});
-
-app.delete('/api/reels/:reelId/like', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId } = req.body;
-    const reel = await Reel.findByIdAndUpdate(reelId, { $pull: { likedBy: userId } }, { new: true });
-    if (!reel) return res.status(404).json({ error: 'Reel not found' });
-    res.json({ reelId, userId, liked: false, likesCount: reel.likedBy.length });
-  } catch (error) {
-    console.error('DELETE /api/reels/:reelId/like error:', error);
-    res.status(500).json({ error: 'Failed to unlike reel' });
-  }
-});
-
-app.post('/api/reels/:reelId/bookmark', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId } = req.body;
-    await Reel.findByIdAndUpdate(reelId, { $addToSet: { bookmarkedBy: userId } });
-    res.json({ reelId, userId, bookmarked: true });
-  } catch (error) {
-    console.error('POST /api/reels/:reelId/bookmark error:', error);
-    res.status(500).json({ error: 'Failed to bookmark reel' });
-  }
-});
-
-app.delete('/api/reels/:reelId/bookmark', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId } = req.body;
-    await Reel.findByIdAndUpdate(reelId, { $pull: { bookmarkedBy: userId } });
-    res.json({ reelId, userId, bookmarked: false });
-  } catch (error) {
-    console.error('DELETE /api/reels/:reelId/bookmark error:', error);
-    res.status(500).json({ error: 'Failed to remove reel bookmark' });
-  }
-});
-
-app.get('/api/reels/:reelId/comments', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const comments = await Comment.find({ postId: reelId })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .populate('userId', 'name username avatarUrl')
-      .lean();
-    res.json(comments);
-  } catch (error) {
-    console.error('GET /api/reels/:reelId/comments error:', error);
-    res.status(500).json({ error: 'Failed to fetch comments' });
-  }
-});
-
-app.post('/api/reels/:reelId/comments', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId, text, content, isAnonymous } = req.body;
-    const commentContent = content || text;
-    if (!userId || !commentContent) {
-      return res.status(400).json({ error: 'userId and content (or text) are required' });
-    }
-    if (isAnonymous) {
-      return res.status(400).json({ error: 'Anonymous comments are not allowed.' });
-    }
-
-    const comment = await Comment.create({
-      postId: reelId,
-      userId,
-      content: commentContent,
-      isAnonymous: isAnonymous === true || isAnonymous === 'true',
-    });
-
-    await Reel.findByIdAndUpdate(reelId, { $inc: { commentsCount: 1 } });
-
-    if (comment) {
-      const populated = await Comment.findById(comment._id)
-        .populate('userId', 'name username avatarUrl')
-        .lean();
-
-      res.status(201).json(populated);
-    } else {
-      res.status(500).json({ error: 'Failed to create comment' });
-    }
-  } catch (error) {
-    console.error('POST /api/reels/:reelId/comments error:', error);
-    res.status(500).json({ error: 'Failed to add comment' });
-  }
-});
-
-// ── R2 Storage Endpoints ──────────────────────────────────────────────────────
-
-// Upload video to R2 with processing (transcoding, thumbnail)
-app.post('/api/reels/upload-r2', uploadVideo.single('video'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No video file provided' });
-    }
-
-    const { userId, caption, isAnonymous } = req.body;
-    if (!userId) {
-      return res.status(400).json({ error: 'userId is required' });
-    }
-
-    // Process video (transcode, generate thumbnail, upload to R2)
-    const processedVideo = await processVideo(req.file.buffer, req.file.originalname);
-
-    // Create reel with R2 URLs
-    const reel = await Reel.create({
-      userId,
-      videoUrl: processedVideo.qualities[0]?.url || processedVideo.originalUrl, // Default to first quality
-      videoQualities: processedVideo.qualities,
-      thumbnailUrl: processedVideo.thumbnail,
-      duration: processedVideo.duration,
-      originalUrl: processedVideo.originalUrl,
-      caption: caption || '',
-      isAnonymous: parseBooleanFlag(isAnonymous),
-    });
-
-    const populated = await Reel.findById(reel._id).populate('userId', 'name username avatarUrl').lean();
-    res.status(201).json(populated);
-  } catch (error) {
-    console.error('POST /api/reels/upload-r2 error:', error);
-    res.status(500).json({ error: 'Failed to upload video to R2' });
-  }
-});
-
-// Upload image to R2
-app.post('/api/images/upload-r2', uploadImage.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file provided' });
-    }
-
-    const imageUrl = await processImage(req.file.buffer, req.file.originalname);
-    res.status(200).json({ url: imageUrl });
-  } catch (error) {
-    console.error('POST /api/images/upload-r2 error:', error);
-    res.status(500).json({ error: 'Failed to upload image to R2' });
-  }
-});
-
-// Upload multiple images to R2
-app.post('/api/images/upload-multiple-r2', uploadMultipleImages.array('images', 10), async (req, res) => {
-  try {
-    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-      return res.status(400).json({ error: 'No image files provided' });
-    }
-
-    const uploadPromises = req.files.map(file =>
-      processImage(file.buffer, file.originalname)
-    );
-
-    const imageUrls = await Promise.all(uploadPromises);
-    res.status(200).json({ urls: imageUrls });
-  } catch (error) {
-    console.error('POST /api/images/upload-multiple-r2 error:', error);
-    res.status(500).json({ error: 'Failed to upload images to R2' });
-  }
-});
-
-// Stream video chunk from R2 (for chunked streaming)
-app.get('/api/stream/:videoId', async (req, res) => {
-  try {
-    const { videoId } = req.params;
-    const range = req.headers.range;
-
-    // In a real implementation, you would:
-    // 1. Get video metadata from DB
-    // 2. Fetch the appropriate quality version
-    // 3. Stream the video with range support
-
-    // For now, return a simple response
-    res.status(501).json({
-      error: 'Streaming endpoint not yet implemented',
-      message: 'Videos should be accessed directly from R2 public URL with CDN'
-    });
-  } catch (error) {
-    console.error('GET /api/stream/:videoId error:', error);
-    res.status(500).json({ error: 'Failed to stream video' });
-  }
-});
-
-// Record video view
-app.post('/api/reels/:reelId/view', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId, watchDuration, totalDuration } = req.body;
-
-    if (!userId || watchDuration === undefined || totalDuration === undefined) {
-      return res.status(400).json({ error: 'userId, watchDuration, and totalDuration are required' });
-    }
-
-    const watchPercentage = (watchDuration / totalDuration) * 100;
-    const completed = watchPercentage >= 80;
-
-    // Check if view already exists (update if so)
-    const existingView = await VideoView.findOne({ reelId, userId });
-
-    if (existingView) {
-      // Update if this is a longer watch duration
-      if (watchDuration > existingView.watchDuration) {
-        existingView.watchDuration = watchDuration;
-        existingView.watchPercentage = watchPercentage;
-        existingView.completed = completed;
-        await existingView.save();
-      }
-    } else {
-      // Create new view record
-      await VideoView.create({
-        reelId,
-        userId,
-        watchDuration,
-        totalDuration,
-        watchPercentage,
-        completed,
-      });
-    }
-
-    res.json({ success: true, completed });
-  } catch (error) {
-    console.error('POST /api/reels/:reelId/view error:', error);
-    res.status(500).json({ error: 'Failed to record view' });
-  }
-});
-
-app.post('/api/reels/:reelId/share', async (req, res) => {
-  try {
-    const { reelId } = req.params;
-    const { userId, targetUserIds } = req.body;
-    if (!userId || !targetUserIds || !Array.isArray(targetUserIds)) {
-      return res.status(400).json({ error: 'userId and targetUserIds array are required' });
-    }
-
-    const reel = await Reel.findById(reelId).populate('userId', 'name username');
-    if (!reel) {
-      return res.status(404).json({ error: 'Reel not found' });
-    }
-
-    // Fetch sender once outside the loop
-    const sender = await User.findById(userId).lean();
-
-    // Bulk create shares
-    const reelShares = targetUserIds.map((targetUserId: string) => ({
-      senderId: userId,
-      postId: reelId,
-      receiverId: targetUserId,
-    }));
-    await Share.insertMany(reelShares);
-
-    // Shares should arrive as chat messages (not notifications)
-    if (sender) {
-      await Promise.all(
-        targetUserIds.map(async (targetUserId: string) => {
-          const message = await Message.create({
-            senderId: userId,
-            receiverId: targetUserId,
-            text: `🎬 Shared a reel: ${reelId}`,
-            status: 'sent',
-          });
-          io.to(`user_${targetUserId}`).emit('receive_private_message', message.toObject());
-          io.to(`user_${userId}`).emit('message_sent', { message: message.toObject() });
-        })
-      );
-    }
-
-    await Reel.findByIdAndUpdate(reelId, { $inc: { sharesCount: targetUserIds.length } });
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('POST /api/reels/:reelId/share error:', error);
-    res.status(500).json({ error: 'Failed to share reel' });
-  }
-});
-
-// User delete own reel
-app.delete('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
-  try {
-    req.reel.isDeleted = true;
-    req.reel.deletedAt = new Date();
-    req.reel.deletedBy = req.user._id;
-    await req.reel.save();
-
-    res.json({ success: true, message: 'Reel deleted successfully' });
-  } catch (error) {
-    console.error('DELETE /api/reels/:reelId error:', error);
-    res.status(500).json({ error: 'Failed to delete reel' });
-  }
-});
-
-// User edit own reel
-app.put('/api/reels/:reelId', authenticate, requireReelOwnership, async (req, res) => {
-  try {
-    const { caption } = req.body;
-
-    req.reel.caption = caption || '';
-    req.reel.updatedAt = new Date();
-    await req.reel.save();
-
-    const populated = await Reel.findById(req.reel._id)
-      .populate('userId', 'name username avatarUrl')
-      .lean();
-
-    res.json(populated);
-  } catch (error) {
-    console.error('PUT /api/reels/:reelId error:', error);
-    res.status(500).json({ error: 'Failed to update reel' });
-  }
-});
-
-// ── Search Routes ──────────────────────────────────────────────────────────────
-
 // Global search endpoint
 app.get('/api/search', async (req, res) => {
   try {
@@ -2000,7 +1821,6 @@ app.get('/api/search', async (req, res) => {
     const results: any = {
       users: [],
       posts: [],
-      reels: [],
     };
 
     // Search users
@@ -2032,22 +1852,6 @@ app.get('/api/search', async (req, res) => {
         .lean();
     }
 
-    // Search reels
-    if (type === 'all' || type === 'reels') {
-      results.reels = await Reel.find({
-        $or: [
-          { caption: searchRegex },
-          ...(normalizedHashtag ? [{ hashtags: normalizedHashtag }] : []),
-        ],
-        isDeleted: { $ne: true },
-      })
-        .select('userId caption thumbnailUrl duration likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous')
-        .populate('userId', 'name username avatarUrl')
-        .sort({ createdAt: -1 })
-        .limit(limitNum)
-        .lean();
-    }
-
     res.json(results);
   } catch (error) {
     console.error('GET /api/search error:', error);
@@ -2055,7 +1859,7 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// ── Helper Functions ───────────────────────────────────────────────────────────
+// -- Helper Functions -----------------------------------------------------------
 
 // Extract @mentions from text
 function extractMentions(text: string): string[] {
@@ -2072,7 +1876,7 @@ function extractMentions(text: string): string[] {
 async function sendMentionNotifications(
   mentionerUserId: string,
   mentions: string[],
-  contentType: 'post' | 'comment' | 'reel',
+  contentType: 'post' | 'comment',
   contentId: string
 ) {
   try {
@@ -2112,7 +1916,7 @@ async function sendMentionNotifications(
   }
 }
 
-// ── Story Routes ───────────────────────────────────────────────────────────────
+// -- Story Routes ---------------------------------------------------------------
 
 // Get active stories from followed users and own stories
 app.get('/api/stories', async (req, res) => {
@@ -2181,7 +1985,7 @@ app.post('/api/stories', uploadImage.single('media'), async (req, res) => {
     let thumbnailUrl: string | undefined;
 
     if (mediaType === 'video') {
-      // For videos, we'd need video processing logic similar to reels
+      // For videos, we'd need video processing logic for stories
       // For now, using a simplified approach
       const filename = generateUniqueFilename('story-video.mp4');
       mediaUrl = await uploadToR2(req.file.buffer, filename, 'video/mp4');
@@ -2313,7 +2117,7 @@ app.get('/api/stories/user/:userId', async (req, res) => {
   }
 });
 
-// ── Tag & Mention Routes ───────────────────────────────────────────────────────
+// -- Tag & Mention Routes -------------------------------------------------------
 
 // Get posts where user is tagged
 app.get('/api/users/:userId/tagged', async (req, res) => {
@@ -2331,17 +2135,7 @@ app.get('/api/users/:userId/tagged', async (req, res) => {
       .limit(limit)
       .lean();
 
-    const reels = await Reel.find({
-      taggedUsers: userId,
-      isDeleted: false
-    })
-      .populate('userId', 'name username avatarUrl isVerified')
-      .populate('taggedUsers', 'name username avatarUrl')
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean();
-
-    res.json({ posts, reels });
+    res.json({ posts });
   } catch (error) {
     console.error('GET /api/users/:userId/tagged error:', error);
     res.status(500).json({ error: 'Failed to fetch tagged content' });
@@ -2379,7 +2173,7 @@ app.get('/api/users/search/mentions', async (req, res) => {
   }
 });
 
-// ── Admin Routes ───────────────────────────────────────────────────────────────
+// -- Admin Routes ---------------------------------------------------------------
 
 // Get all users (admin only)
 app.get('/api/admin/users', authenticate, requireAdmin, async (req, res) => {
@@ -2498,28 +2292,6 @@ app.delete('/api/admin/posts/:postId', authenticate, requireAdmin, async (req, r
   }
 });
 
-// Delete reel (admin only)
-app.delete('/api/admin/reels/:reelId', authenticate, requireAdmin, async (req, res) => {
-  try {
-    const { reelId } = req.params;
-
-    const reel = await Reel.findById(reelId);
-    if (!reel) {
-      return res.status(404).json({ error: 'Reel not found' });
-    }
-
-    reel.isDeleted = true;
-    reel.deletedAt = new Date();
-    reel.deletedBy = req.user._id;
-    await reel.save();
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('DELETE /api/admin/reels/:reelId error:', error);
-    res.status(500).json({ error: 'Failed to delete reel' });
-  }
-});
-
 // Get admin statistics
 app.get('/api/admin/stats', authenticate, requireAdmin, async (req, res) => {
   try {
@@ -2528,8 +2300,6 @@ app.get('/api/admin/stats', authenticate, requireAdmin, async (req, res) => {
       bannedUsers,
       totalPosts,
       deletedPosts,
-      totalReels,
-      deletedReels,
       recentUsers,
       recentPosts
     ] = await Promise.all([
@@ -2537,8 +2307,6 @@ app.get('/api/admin/stats', authenticate, requireAdmin, async (req, res) => {
       User.countDocuments({ isBanned: true }),
       Post.countDocuments(),
       Post.countDocuments({ isDeleted: true }),
-      Reel.countDocuments(),
-      Reel.countDocuments({ isDeleted: true }),
       User.find().select('name username createdAt').sort({ createdAt: -1 }).limit(5),
       Post.find({ isDeleted: false }).populate('userId', 'name username').sort({ createdAt: -1 }).limit(5)
     ]);
@@ -2554,11 +2322,6 @@ app.get('/api/admin/stats', authenticate, requireAdmin, async (req, res) => {
           total: totalPosts,
           deleted: deletedPosts,
           active: totalPosts - deletedPosts
-        },
-        reels: {
-          total: totalReels,
-          deleted: deletedReels,
-          active: totalReels - deletedReels
         }
       },
       recent: {
@@ -2626,37 +2389,6 @@ app.post('/api/admin/posts/:postId/approval', authenticate, requireAdmin, async 
   } catch (error) {
     console.error('POST /api/admin/posts/:postId/approval error:', error);
     res.status(500).json({ error: 'Failed to update approval status' });
-  }
-});
-
-// Get all reels (admin only)
-app.get('/api/admin/reels', authenticate, requireAdmin, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
-    const skip = (page - 1) * limit;
-
-    const [reels, total] = await Promise.all([
-      Reel.find()
-        .populate('userId', 'name username avatarUrl')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      Reel.countDocuments()
-    ]);
-
-    res.json({
-      reels,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('GET /api/admin/reels error:', error);
-    res.status(500).json({ error: 'Failed to fetch reels' });
   }
 });
 
@@ -2826,7 +2558,7 @@ app.get('/api/admin/ads/stats/summary', authenticate, requireAdmin, async (req, 
   }
 });
 
-// ── Badge & Verification Routes ───────────────────────────────────────────────
+// -- Badge & Verification Routes -----------------------------------------------
 
 // Get maintenance status (public)
 app.get('/api/system/maintenance', async (_req, res) => {
