@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IReport extends Document {
   reporterId: mongoose.Types.ObjectId;
-  type: 'post' | 'reel' | 'user' | 'bug' | 'suggestion';
+  type: 'post' | 'user' | 'bug' | 'suggestion';
   targetId?: mongoose.Types.ObjectId; // For post or user reports
   reason: string;
   description?: string;
@@ -19,7 +19,7 @@ const ReportSchema = new Schema<IReport>(
     reporterId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     type: {
       type: String,
-      enum: ['post', 'reel', 'user', 'bug', 'suggestion'],
+      enum: ['post', 'user', 'bug', 'suggestion'],
       required: true
     },
     targetId: { type: Schema.Types.ObjectId }, // Can reference Post or User

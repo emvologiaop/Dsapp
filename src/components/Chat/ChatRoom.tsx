@@ -26,14 +26,23 @@ interface ChatRoomProps {
   currentUser: UserLite;
   otherUser: UserLite;
   onBack: () => void;
+  onViewProfile?: (userId?: string | null) => void;
+  focusMessageId?: string;
 }
 
-export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBack }) => {
+export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBack, onViewProfile, focusMessageId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [canMessage, setCanMessage] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const focusMessageIdRef = useRef<string | undefined>(focusMessageId);
+
+  useEffect(() => {
+    focusMessageIdRef.current = focusMessageId;
+  }, [focusMessageId]);
 
   const currentUserId = currentUser?.id;
   const otherUserId = otherUser?.id;
@@ -54,6 +63,20 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
   useEffect(() => {
     if (!currentUserId || !otherUserId) return;
 
+    const fetchMessagingAccess = async () => {
+      try {
+        const res = await fetch(`/api/users/${otherUserId}/profile?currentUserId=${currentUserId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (typeof data?.canMessage === 'boolean') {
+          setCanMessage(data.canMessage);
+          setComposerError(data.canMessage ? null : 'You can only message users after you both follow each other.');
+        }
+      } catch (e) {
+        console.error('Failed to load messaging access:', e);
+      }
+    };
+
     const fetchMessages = async () => {
       try {
         setLoadError(null);
@@ -64,14 +87,45 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
         }
         const data = await res.json();
         setMessages(Array.isArray(data) ? data : []);
-        queueMicrotask(scrollToBottom);
+        queueMicrotask(() => {
+          const targetId = focusMessageIdRef.current;
+          if (targetId) {
+            // Clear after first use so normal navigation doesn't keep focusing
+            sessionStorage.removeItem('ddu_focus_message_id');
+            focusMessageIdRef.current = undefined;
+            const node = document.getElementById(`msg_${targetId}`);
+            if (node) node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            else scrollToBottom();
+          } else {
+            scrollToBottom();
+          }
+        });
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : 'Failed to load messages');
       }
     };
 
+    fetchMessagingAccess();
     fetchMessages();
   }, [currentUserId, otherUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || !otherUserId) return;
+
+    const markThreadRead = async () => {
+      try {
+        await fetch('/api/messages/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUserId, otherUserId }),
+        });
+      } catch (e) {
+        console.error('Failed to mark messages as read:', e);
+      }
+    };
+
+    markThreadRead();
+  }, [currentUserId, otherUserId, messages.length]);
 
   useEffect(() => {
     if (!currentUserId || !otherUserId) return;
@@ -114,12 +168,26 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
       queueMicrotask(scrollToBottom);
     };
 
+    const handleMessageStatus = (payload: any) => {
+      const messageId = payload?.messageId;
+      const status = payload?.status as Message['status'] | undefined;
+      if (!messageId || !status) return;
+
+      setMessages((prev) =>
+        prev.map((message) =>
+          message._id === messageId ? { ...message, status } : message
+        )
+      );
+    };
+
     socket.on('receive_private_message', handleReceive);
     socket.on('message_sent', handleMessageSent);
+    socket.on('message_status', handleMessageStatus);
 
     return () => {
       socket.off('receive_private_message', handleReceive);
       socket.off('message_sent', handleMessageSent);
+      socket.off('message_status', handleMessageStatus);
     };
   }, [currentUserId, otherUserId]);
 
@@ -128,8 +196,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
     const trimmed = text.trim();
     if (!trimmed) return;
     if (sending) return;
+    if (!canMessage) return;
 
     setSending(true);
+    setComposerError(null);
     const tempId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const optimistic: Message = {
       _id: tempId,
@@ -145,12 +215,30 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
     queueMicrotask(scrollToBottom);
 
     try {
-      socket.emit('send_private_message', {
-        senderId: currentUserId,
-        receiverId: otherUserId,
-        text: trimmed,
-        tempId,
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: currentUserId,
+          receiverId: otherUserId,
+          text: trimmed,
+          tempId,
+        }),
       });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to send message');
+      }
+
+      if (data?.message) {
+        setMessages((prev) => prev.map((message) => (
+          message.tempId === tempId ? { ...data.message, tempId: undefined } : message
+        )));
+      }
+    } catch (e) {
+      setMessages((prev) => prev.filter((m) => m.tempId !== tempId));
+      setComposerError(e instanceof Error ? e.message : 'Failed to send message');
     } finally {
       setSending(false);
     }
@@ -167,10 +255,24 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
         >
           <ArrowLeft size={20} />
         </button>
-        <div className="flex-1 min-w-0">
-          <p className="font-bold truncate">{title}</p>
-          <p className="text-xs text-muted-foreground truncate">@{otherUser?.username || 'user'}</p>
-        </div>
+        <button
+          type="button"
+          onClick={() => onViewProfile?.(otherUserId)}
+          className="flex items-center gap-3 min-w-0 text-left"
+        >
+          <div className="h-10 w-10 rounded-full overflow-hidden bg-muted flex items-center justify-center font-bold text-foreground">
+            {otherUser?.avatarUrl ? (
+              <img src={otherUser.avatarUrl} alt={title} className="h-full w-full object-cover" />
+            ) : (
+              otherUser?.name?.[0] || 'U'
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold truncate">{title}</p>
+            <p className="text-xs text-muted-foreground truncate">@{otherUser?.username || 'user'}</p>
+          </div>
+        </button>
+        <div className="flex-1 min-w-0" />
       </header>
 
       <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
@@ -182,8 +284,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
 
         {messages.map((m) => {
           const isMine = m.senderId === currentUserId;
+          const isLatestOwnMessage = isMine && [...messages].reverse().find((message) => message.senderId === currentUserId)?._id === m._id;
           return (
-            <div key={m._id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
+            <div id={`msg_${m._id}`} key={m._id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
               <div
                 className={cn(
                   'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm border',
@@ -196,8 +299,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
                   <img src={m.imageUrl} alt="" className="w-full max-w-sm rounded-xl mb-2 object-cover" />
                 )}
                 <p className="whitespace-pre-wrap break-words">{m.text}</p>
-                <div className={cn('mt-1 text-[10px] opacity-80', isMine ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
+                <div className={cn('mt-1 flex items-center gap-2 text-[10px] opacity-80', isMine ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
                   {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {isLatestOwnMessage && m.status && (
+                    <span className="uppercase tracking-wide">{m.status}</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -206,6 +312,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
       </div>
 
       <div className="border-t border-border p-3 bg-background">
+        {composerError && (
+          <FriendlyCard className="mb-3 border border-amber-500/20 bg-amber-500/10 text-sm text-amber-700 dark:text-amber-300">
+            {composerError}
+          </FriendlyCard>
+        )}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -220,13 +331,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-            placeholder="Message..."
-            className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-primary"
+            placeholder={canMessage ? 'Message...' : 'Follow each other to send messages'}
+            disabled={!canMessage}
+            className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="button"
             onClick={sendMessage}
-            disabled={!text.trim() || sending}
+            disabled={!canMessage || !text.trim() || sending}
             className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-50 transition-all active:scale-95 inline-flex items-center gap-2"
           >
             <Send size={18} />
@@ -237,4 +349,3 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
     </div>
   );
 };
-

@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Home } from 'lucide-react';
 import { Dock } from '../components/ui/dock-two';
 import { CommentsPanel } from '../src/components/CommentsPanel';
-import { ReelCommentsPanel } from '../src/components/ReelCommentsPanel';
 import { SearchPanel } from '../src/components/SearchPanel';
 import { ShareModal } from '../src/components/ShareModal';
 
@@ -21,20 +20,6 @@ describe('mobile overlay layouts', () => {
 
     expect(html).toContain('fixed inset-0 bg-background z-50 flex flex-col');
     expect(html).toContain('md:max-h-[75vh]');
-  });
-
-  it('renders the reel comments panel as a full-screen mobile overlay', () => {
-    const html = renderToStaticMarkup(
-      <ReelCommentsPanel
-        reelId="reel-1"
-        userId="user-1"
-        isAnonymous={false}
-        onClose={() => {}}
-      />
-    );
-
-    expect(html).toContain('fixed inset-0 w-full bg-background shadow-xl flex flex-col');
-    expect(html).toContain('md:max-h-[80vh]');
   });
 
   it('renders the search panel full-screen on mobile while keeping the desktop card layout', () => {

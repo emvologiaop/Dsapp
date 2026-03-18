@@ -7,9 +7,10 @@ interface FollowButtonProps {
   targetId: string;
   initialIsFollowing: boolean;
   className?: string;
+  onChange?: (isFollowing: boolean) => void;
 }
 
-export const FollowButton: React.FC<FollowButtonProps> = ({ userId, targetId, initialIsFollowing, className }) => {
+export const FollowButton: React.FC<FollowButtonProps> = ({ userId, targetId, initialIsFollowing, className, onChange }) => {
   const [isFollowing, setIsFollowing] = useState(initialIsFollowing);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -28,7 +29,12 @@ export const FollowButton: React.FC<FollowButtonProps> = ({ userId, targetId, in
       });
       
       if (response.ok) {
-        setIsFollowing(!isFollowing);
+        const nextIsFollowing = !isFollowing;
+        setIsFollowing(nextIsFollowing);
+        onChange?.(nextIsFollowing);
+        window.dispatchEvent(new CustomEvent('social:follow-changed', {
+          detail: { userId, targetId, following: nextIsFollowing }
+        }));
       }
     } catch (error) {
       console.error('Failed to toggle follow:', error);

@@ -6,9 +6,10 @@ import { FollowButton } from './FollowButton';
 
 interface InboxProps {
   userId: string;
+  onViewProfile?: (userId?: string | null) => void;
 }
 
-export const Inbox: React.FC<InboxProps> = ({ userId }) => {
+export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -54,24 +55,42 @@ export const Inbox: React.FC<InboxProps> = ({ userId }) => {
       {messages.map((message) => (
         <div key={message.shareId} className="space-y-2">
           <div className="px-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <img 
-              src={message.sender.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${message.sender.username}`} 
-              alt={message.sender.name} 
-              className="w-5 h-5 rounded-full bg-muted"
-            />
-            <span className="font-medium text-foreground">{message.sender.name}</span> shared this with you
+            <button
+              type="button"
+              onClick={() => onViewProfile?.(message.sender.id || message.sender._id)}
+              className="flex items-center gap-2"
+            >
+              <img 
+                src={message.sender.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${message.sender.username}`} 
+                alt={message.sender.name} 
+                className="w-5 h-5 rounded-full bg-muted"
+              />
+              <span className="font-medium text-foreground">{message.sender.name}</span>
+            </button>
+            <span>shared this with you</span>
           </div>
           
           <FriendlyCard className="space-y-4 p-0 overflow-hidden border-primary/20">
             <div className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                  {message.post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : (message.post.userId?.name?.[0] || 'U')}
-                </div>
-                <div>
-                  <p className="text-sm font-bold">{message.post.isAnonymous ? 'Ghost' : (message.post.userId?.name || 'User')}</p>
-                  <p className="text-[10px] text-muted-foreground">{new Date(message.post.createdAt).toLocaleDateString()}</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => !message.post.isAnonymous && onViewProfile?.(message.post.userId?._id)}
+                  disabled={message.post.isAnonymous || !message.post.userId?._id}
+                  className="flex items-center gap-3 text-left disabled:cursor-default"
+                >
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                    {message.post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : message.post.userId?.avatarUrl ? (
+                      <img src={message.post.userId.avatarUrl} alt={message.post.userId.name} className="w-full h-full object-cover" />
+                    ) : (
+                      message.post.userId?.name?.[0] || 'U'
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">{message.post.isAnonymous ? 'Ghost' : (message.post.userId?.name || 'User')}</p>
+                    <p className="text-[10px] text-muted-foreground">{new Date(message.post.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </button>
               </div>
             </div>
             {message.post.mediaUrl && (

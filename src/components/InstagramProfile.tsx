@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FriendlyCard } from './FriendlyCard';
 import { FollowButton } from './FollowButton';
 import { ImageCarousel } from './ImageCarousel';
-import { Settings, Grid3x3, Film, Tag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, ArrowLeft, MessageSquare, X, Heart, MessageCircle, Users, Bookmark, GraduationCap, CirclePlay, Archive, Share2, MoreVertical, Flag } from 'lucide-react';
+import { Settings, Grid3x3, Tag, MapPin, Link as LinkIcon, BadgeCheck, Calendar, ArrowLeft, MessageSquare, X, Heart, MessageCircle, Users, Bookmark, GraduationCap, CirclePlay, Archive } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { StoryViewer } from './StoryViewer';
 import { PostActions } from './PostActions';
-import { ReelCommentsPanel } from './ReelCommentsPanel';
-import { ShareModal } from './ShareModal';
 
 interface InstagramProfileProps {
   userId: string;
@@ -20,10 +18,11 @@ interface InstagramProfileProps {
   onClose?: () => void;
   onOpenSettings?: () => void;
   onMessageUser?: (user: any) => void;
+  onViewProfile?: (userId?: string | null) => void;
   initialSelectedPost?: any | null;
 }
 
-type ProfileTab = 'posts' | 'reels' | 'stories' | 'saved' | 'tagged';
+type ProfileTab = 'posts' | 'stories' | 'saved' | 'tagged';
 
 export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   userId,
@@ -35,6 +34,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   onClose,
   onOpenSettings,
   onMessageUser,
+  onViewProfile,
   initialSelectedPost,
 }) => {
   const [profile, setProfile] = useState<any>(null);
@@ -42,22 +42,12 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ProfileTab>('posts');
   const [posts, setPosts] = useState<any[]>([]);
-  const [reels, setReels] = useState<any[]>([]);
   const [stories, setStories] = useState<any[]>([]);
   const [savedContent, setSavedContent] = useState<any[]>([]);
   const [taggedContent, setTaggedContent] = useState<any[]>([]);
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
-  const [selectedReel, setSelectedReel] = useState<any | null>(null);
+  const [selectedPostCollection, setSelectedPostCollection] = useState<'posts' | 'saved' | 'tagged'>('posts');
   const [selectedStories, setSelectedStories] = useState<any[] | null>(null);
-  const [activeCommentsReelId, setActiveCommentsReelId] = useState<string | null>(null);
-  const [shareModalReelId, setShareModalReelId] = useState<string | null>(null);
-  const [showReelOptions, setShowReelOptions] = useState(false);
-  const [showReelReportModal, setShowReelReportModal] = useState(false);
-  const [reportReason, setReportReason] = useState('');
-  const [reportDescription, setReportDescription] = useState('');
-  const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [reportSuccess, setReportSuccess] = useState(false);
-  const [isSelectedReelVideoReady, setIsSelectedReelVideoReady] = useState(false);
   
   // Follow modal state
   const [showFollowersModal, setShowFollowersModal] = useState(false);
@@ -70,11 +60,9 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   useEffect(() => {
     setActiveTab('posts');
     setSelectedPost(null);
-    setSelectedReel(null);
     setSelectedStories(null);
     fetchProfile();
     fetchPosts();
-    fetchReels();
     fetchStories();
     if (userId === currentUserId) {
       fetchSavedContent();
@@ -86,8 +74,40 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   useEffect(() => {
     if (!initialSelectedPost) return;
     setActiveTab('posts');
+    setSelectedPostCollection('posts');
     setSelectedPost(initialSelectedPost);
   }, [initialSelectedPost]);
+
+  const postViewerRef = useRef<HTMLDivElement | null>(null);
+
+  const viewerItems = useMemo(() => {
+    const source =
+      selectedPostCollection === 'saved'
+        ? savedContent
+        : selectedPostCollection === 'tagged'
+          ? taggedContent
+          : posts;
+
+    if (!selectedPost) return source;
+    if (source.some((item) => item._id === selectedPost._id)) return source;
+    return [selectedPost, ...source.filter((item) => item._id !== selectedPost._id)];
+  }, [posts, savedContent, taggedContent, selectedPost, selectedPostCollection]);
+
+  useEffect(() => {
+    if (!selectedPost?._id || !postViewerRef.current) return;
+
+    const postElement = postViewerRef.current.querySelector<HTMLElement>(`[data-post-id="${selectedPost._id}"]`);
+    if (!postElement) return;
+
+    requestAnimationFrame(() => {
+      postElement.scrollIntoView({ block: 'center' });
+    });
+  }, [selectedPost?._id, viewerItems.length]);
+
+  const openPostViewer = (post: any, collection: 'posts' | 'saved' | 'tagged') => {
+    setSelectedPostCollection(collection);
+    setSelectedPost(post);
+  };
 
   useEffect(() => {
     if (activeTab === 'tagged') {
@@ -96,8 +116,19 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   }, [activeTab, userId, dataSaverEnabled]);
 
   useEffect(() => {
-    setIsSelectedReelVideoReady(!dataSaverEnabled);
-  }, [selectedReel?._id, dataSaverEnabled]);
+    const handleFollowChanged = () => {
+      fetchProfile();
+      if (showFollowersModal) {
+        fetchFollowers();
+      }
+      if (showFollowingModal) {
+        fetchFollowing();
+      }
+    };
+
+    window.addEventListener('social:follow-changed', handleFollowChanged as EventListener);
+    return () => window.removeEventListener('social:follow-changed', handleFollowChanged as EventListener);
+  }, [userId, currentUserId, showFollowersModal, showFollowingModal]);
 
   const fetchProfile = async () => {
     setIsLoading(true);
@@ -124,6 +155,11 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
           followersCount: currentUser.followersCount || currentUser.followerIds?.length || 0,
           followingCount: currentUser.followingCount || currentUser.followingIds?.length || 0,
           isFollowing: false,
+          followsYou: false,
+          canMessage: false,
+          mutualFriendsCount: 0,
+          mutualFriends: [],
+          sharedContexts: [],
         });
         return;
       }
@@ -153,19 +189,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     }
   };
 
-  const fetchReels = async () => {
-    try {
-      const limit = dataSaverEnabled ? 9 : 20;
-      const res = await fetch(`/api/users/${userId}/reels?currentUserId=${currentUserId}&limit=${limit}`);
-      if (res.ok) {
-        const data = await res.json();
-        setReels(data.reels || []);
-      }
-    } catch (error) {
-      console.error('Failed to fetch reels:', error);
-    }
-  };
-
   const fetchStories = async () => {
     try {
       const res = await fetch(`/api/stories/user/${userId}`);
@@ -184,11 +207,10 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       const res = await fetch(`/api/users/${userId}/saved?currentUserId=${currentUserId}&limit=${limit}`);
       if (res.ok) {
         const data = await res.json();
-        const combined = [
-          ...(data.posts || []).map((post: any) => ({ ...post, type: 'post' })),
-          ...(data.reels || []).map((reel: any) => ({ ...reel, type: 'reel' })),
-        ].sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-        setSavedContent(combined);
+        const savedPosts = (data.posts || [])
+          .map((post: any) => ({ ...post, type: 'post' }))
+          .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setSavedContent(savedPosts);
       }
     } catch (error) {
       console.error('Failed to fetch saved content:', error);
@@ -201,10 +223,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       const res = await fetch(`/api/users/${userId}/tagged?limit=${limit}`);
       if (res.ok) {
         const data = await res.json();
-        setTaggedContent([
-          ...(data.posts || []).map((post: any) => ({ ...post, type: 'post' })),
-          ...(data.reels || []).map((reel: any) => ({ ...reel, type: 'reel' })),
-        ]);
+        setTaggedContent((data.posts || []).map((post: any) => ({ ...post, type: 'post' })));
       }
     } catch (error) {
       console.error('Failed to fetch tagged content:', error);
@@ -245,95 +264,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
     }
   };
 
-  const openReel = (reel: any) => {
-    setShowReelOptions(false);
-    setSelectedReel(reel);
-  };
-
-  const toggleReelLike = async (reelId: string, currentlyLiked?: boolean) => {
-    setReels((prev) => prev.map((reel) => reel._id === reelId ? { ...reel, isLiked: !currentlyLiked, likesCount: (reel.likesCount || 0) + (currentlyLiked ? -1 : 1) } : reel));
-    setSavedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isLiked: !currentlyLiked, likesCount: (item.likesCount || 0) + (currentlyLiked ? -1 : 1) } : item));
-    setTaggedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isLiked: !currentlyLiked, likesCount: (item.likesCount || 0) + (currentlyLiked ? -1 : 1) } : item));
-    setSelectedReel((prev: any) => prev?._id === reelId ? { ...prev, isLiked: !currentlyLiked, likesCount: (prev.likesCount || 0) + (currentlyLiked ? -1 : 1) } : prev);
-
-    try {
-      const res = await fetch(`/api/reels/${reelId}/like`, {
-        method: currentlyLiked ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId }),
-      });
-      if (!res.ok) throw new Error('Failed to update like');
-    } catch {
-      setReels((prev) => prev.map((reel) => reel._id === reelId ? { ...reel, isLiked: currentlyLiked, likesCount: (reel.likesCount || 0) + (currentlyLiked ? 1 : -1) } : reel));
-      setSavedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isLiked: currentlyLiked, likesCount: (item.likesCount || 0) + (currentlyLiked ? 1 : -1) } : item));
-      setTaggedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isLiked: currentlyLiked, likesCount: (item.likesCount || 0) + (currentlyLiked ? 1 : -1) } : item));
-      setSelectedReel((prev: any) => prev?._id === reelId ? { ...prev, isLiked: currentlyLiked, likesCount: (prev.likesCount || 0) + (currentlyLiked ? 1 : -1) } : prev);
-    }
-  };
-
-  const toggleReelSave = async (reelId: string, currentlySaved?: boolean) => {
-    const nextSaved = !currentlySaved;
-    setReels((prev) => prev.map((reel) => reel._id === reelId ? { ...reel, isBookmarked: nextSaved } : reel));
-    setSavedContent((prev) => {
-      const updated = prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isBookmarked: nextSaved } : item);
-      return activeTab === 'saved' && !nextSaved ? updated.filter((item) => !(item.type === 'reel' && item._id === reelId)) : updated;
-    });
-    setTaggedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isBookmarked: nextSaved } : item));
-    setSelectedReel((prev: any) => prev?._id === reelId ? { ...prev, isBookmarked: nextSaved } : prev);
-
-    try {
-      const res = await fetch(`/api/reels/${reelId}/bookmark`, {
-        method: currentlySaved ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId }),
-      });
-      if (!res.ok) throw new Error('Failed to update save');
-      if (!currentlySaved && userId === currentUserId) {
-        fetchSavedContent();
-      }
-    } catch {
-      setReels((prev) => prev.map((reel) => reel._id === reelId ? { ...reel, isBookmarked: currentlySaved } : reel));
-      if (userId === currentUserId) {
-        fetchSavedContent();
-      }
-      setTaggedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, isBookmarked: currentlySaved } : item));
-      setSelectedReel((prev: any) => prev?._id === reelId ? { ...prev, isBookmarked: currentlySaved } : prev);
-    }
-  };
-
-  const handleReelReport = async () => {
-    if (!selectedReel?._id || !reportReason) return;
-    setReportSubmitting(true);
-    try {
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reporterId: currentUserId,
-          type: 'reel',
-          targetId: selectedReel._id,
-          reason: reportReason,
-          description: reportDescription,
-        }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || 'Failed to report reel');
-      }
-      setReportSuccess(true);
-      setTimeout(() => {
-        setShowReelReportModal(false);
-        setReportSuccess(false);
-        setReportReason('');
-        setReportDescription('');
-      }, 1800);
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to report reel');
-    } finally {
-      setReportSubmitting(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -367,7 +297,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             <motion.button
               key={post._id}
               type="button"
-              onClick={() => setSelectedPost(post)}
+              onClick={() => openPostViewer(post, 'posts')}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               className="aspect-square bg-muted overflow-hidden cursor-pointer group relative focus:outline-none"
@@ -403,50 +333,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                   <Bookmark className="w-3 h-3 text-white" />
                 </div>
               )}
-            </motion.button>
-          ))}
-        </div>
-      );
-    }
-
-    if (activeTab === 'reels') {
-      if (reels.length === 0) {
-        return (
-          <div className="text-center py-20">
-            <Film className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
-            <p className="text-muted-foreground">No reels yet</p>
-          </div>
-        );
-      }
-
-      return (
-        <div className="grid grid-cols-3 gap-0.5">
-          {reels.map((reel) => (
-            <motion.button
-              key={reel._id}
-              type="button"
-              onClick={() => openReel(reel)}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="aspect-[9/16] bg-muted overflow-hidden cursor-pointer group relative focus:outline-none"
-              whileHover={{ scale: 0.98 }}
-            >
-              {(reel.thumbnailUrl || reel.videoUrl) && (
-                <img
-                  src={reel.thumbnailUrl || reel.videoUrl}
-                  alt="Reel"
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  loading="lazy"
-                  decoding="async"
-                />
-              )}
-              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Film className="w-8 h-8 text-white" />
-              </div>
-              <div className="absolute bottom-2 left-2 text-white text-xs font-bold flex items-center gap-1 bg-black/40 rounded px-1.5 py-0.5">
-                <Film className="w-3 h-3" />
-                <span>{reel.viewsCount || 0}</span>
-              </div>
             </motion.button>
           ))}
         </div>
@@ -532,7 +418,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
         return (
           <div className="text-center py-20">
             <Archive className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
-            <p className="text-muted-foreground">No saved posts or reels yet</p>
+            <p className="text-muted-foreground">No saved posts yet</p>
           </div>
         );
       }
@@ -543,30 +429,24 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             <motion.button
               key={`${item.type}-${item._id}`}
               type="button"
-              onClick={() => item.type === 'post' ? setSelectedPost(item) : openReel(item)}
+              onClick={() => openPostViewer(item, 'saved')}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className={cn(
-                'bg-muted overflow-hidden cursor-pointer group relative focus:outline-none',
-                item.type === 'post' ? 'aspect-square' : 'aspect-[9/16]'
-              )}
+              className="aspect-square bg-muted overflow-hidden cursor-pointer group relative focus:outline-none"
             >
-              {item.mediaUrl || item.mediaUrls?.[0] || item.thumbnailUrl || item.videoUrl ? (
+              {item.mediaUrl || item.mediaUrls?.[0] ? (
                 <img
-                  src={item.mediaUrls?.[0] || item.mediaUrl || item.thumbnailUrl || item.videoUrl}
-                  alt={item.type === 'post' ? 'Saved post' : 'Saved reel'}
+                  src={item.mediaUrls?.[0] || item.mediaUrl}
+                  alt="Saved post"
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                   loading="lazy"
                   decoding="async"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10 p-3">
-                  <p className="text-xs line-clamp-4 text-center text-muted-foreground">{item.content || item.caption}</p>
+                  <p className="text-xs line-clamp-4 text-center text-muted-foreground">{item.content}</p>
                 </div>
               )}
-              <div className="absolute top-2 right-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white">
-                {item.type === 'post' ? 'Post' : 'Reel'}
-              </div>
             </motion.button>
           ))}
         </div>
@@ -589,26 +469,23 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             <motion.button
               key={item._id}
               type="button"
-              onClick={() => item.type === 'post' ? setSelectedPost(item) : openReel(item)}
+              onClick={() => openPostViewer(item, 'tagged')}
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className={cn(
-                'bg-muted overflow-hidden cursor-pointer group relative focus:outline-none',
-                item.type === 'post' ? 'aspect-square' : 'aspect-[9/16]'
-              )}
+              className="aspect-square bg-muted overflow-hidden cursor-pointer group relative focus:outline-none"
               whileHover={{ scale: 0.98 }}
             >
-              {item.mediaUrl || item.videoUrl || item.mediaUrls?.[0] ? (
+              {item.mediaUrl || item.mediaUrls?.[0] ? (
                 <img
-                  src={item.mediaUrls?.[0] || item.mediaUrl || item.videoUrl}
-                  alt={item.type === 'post' ? 'Tagged post' : 'Tagged reel'}
+                  src={item.mediaUrls?.[0] || item.mediaUrl}
+                  alt="Tagged post"
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                   loading="lazy"
                   decoding="async"
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-accent/10 p-3">
-                  <p className="text-xs line-clamp-4 text-center text-muted-foreground">{item.content || item.caption}</p>
+                  <p className="text-xs line-clamp-4 text-center text-muted-foreground">{item.content}</p>
                 </div>
               )}
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white">
@@ -621,11 +498,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                   <span className="text-sm font-bold">{item.commentsCount || 0}</span>
                 </div>
               </div>
-              {item.type === 'reel' && (
-                <div className="absolute bottom-2 left-2 text-white text-xs font-bold flex items-center gap-1">
-                  <Film className="w-4 h-4" />
-                </div>
-              )}
             </motion.button>
           ))}
         </div>
@@ -753,11 +625,13 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                     targetId={userId}
                     initialIsFollowing={profile.isFollowing}
                     className="flex-1 rounded-lg font-semibold"
+                    onChange={() => fetchProfile()}
                   />
                   <button
                     type="button"
                     onClick={() => onMessageUser?.(profile)}
-                    className="flex items-center justify-center gap-1.5 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-sm font-semibold transition-all border border-border"
+                    disabled={!profile.canMessage}
+                    className="flex items-center justify-center gap-1.5 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-sm font-semibold transition-all border border-border disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <MessageSquare className="w-4 h-4" />
                     Message
@@ -771,6 +645,39 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
         {/* Profile Info */}
         <div className="space-y-1.5">
           <h3 className="font-bold text-sm text-foreground">{profile.name}</h3>
+          {!isOwnProfile && !profile.canMessage && (
+            <p className="text-xs text-muted-foreground">Messaging unlocks after you both follow each other.</p>
+          )}
+          {!isOwnProfile && profile.mutualFriendsCount > 0 && (
+            <div className="flex items-center gap-2 pt-1">
+              <div className="flex -space-x-2">
+                {(profile.mutualFriends || []).slice(0, 3).map((mutual: any) => (
+                  <button
+                    key={mutual.id}
+                    type="button"
+                    onClick={() => onViewProfile?.(mutual.id)}
+                    className="h-7 w-7 overflow-hidden rounded-full border-2 border-background bg-muted"
+                    aria-label={mutual.name}
+                  >
+                    {mutual.avatarUrl ? (
+                      <img src={mutual.avatarUrl} alt={mutual.name} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-[10px] font-bold">{mutual.name?.[0] || 'U'}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Followed by {(profile.mutualFriends || []).slice(0, 2).map((mutual: any) => mutual.username).join(', ')}
+                {profile.mutualFriendsCount > 2 ? ` and ${profile.mutualFriendsCount - 2} others` : ''}
+              </p>
+            </div>
+          )}
+          {!isOwnProfile && profile.sharedContexts?.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Shared context: {profile.sharedContexts.join(' • ')}
+            </p>
+          )}
           {profile.bio && (
             <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{profile.bio}</p>
           )}
@@ -837,7 +744,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
         <div className="flex items-center">
           {([
             { id: 'posts', icon: Grid3x3, label: 'Posts' },
-            { id: 'reels', icon: Film, label: 'Reels' },
             { id: 'stories', icon: CirclePlay, label: 'Stories' },
             ...(isOwnProfile ? [{ id: 'saved', icon: Archive, label: 'Saved' } as const] : []),
             { id: 'tagged', icon: Tag, label: 'Tagged' },
@@ -880,19 +786,18 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-background"
             onClick={() => setSelectedPost(null)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-background rounded-2xl overflow-hidden w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl"
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ duration: 0.2 }}
+              className="flex h-full w-full flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden">
                     {profile.avatarUrl ? (
@@ -911,202 +816,59 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 </button>
               </div>
 
-              {/* Post Media */}
-              {(selectedPost.mediaUrls?.length > 0 || selectedPost.mediaUrl) && (
-                <ImageCarousel
-                  images={selectedPost.mediaUrls?.length > 0 ? selectedPost.mediaUrls : [selectedPost.mediaUrl]}
-                />
-              )}
-
-              {/* Post Content */}
-              <div className="p-4 space-y-3">
-                {selectedPost.content && (
-                  <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{selectedPost.content}</p>
-                )}
-
-                <PostActions
-                  postId={selectedPost._id}
-                  userId={currentUserId}
-                  initialLikes={selectedPost.likesCount}
-                  initialLiked={selectedPost.isLiked}
-                  initialBookmarked={selectedPost.isBookmarked}
-                  initialComments={selectedPost.commentsCount}
-                  initialShares={selectedPost.sharesCount}
-                />
-
-                {/* Stats row */}
-                <div className="flex items-center gap-4 pt-1 border-t border-border/50">
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Heart className="w-4 h-4" />
-                    <span>{selectedPost.likesCount || 0} likes</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <MessageCircle className="w-4 h-4" />
-                    <span>{selectedPost.commentsCount || 0} comments</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Users className="w-4 h-4" />
-                    <span>{selectedPost.sharesCount || 0} shares</span>
-                  </div>
-                </div>
-
-                {/* Timestamp */}
-                <p className="text-xs text-muted-foreground">
-                  {new Date(selectedPost.createdAt).toLocaleDateString('en-US', {
-                    year: 'numeric', month: 'long', day: 'numeric'
-                  })}
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {selectedReel && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => {
-              setSelectedReel(null);
-              setShowReelOptions(false);
-            }}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="w-full max-w-md overflow-hidden rounded-3xl bg-background shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="relative bg-black">
-                {isSelectedReelVideoReady || !dataSaverEnabled ? (
-                  <video
-                    src={selectedReel.videoUrl}
-                    poster={selectedReel.thumbnailUrl}
-                    className="w-full aspect-[9/16] object-cover"
-                    controls
-                    playsInline
-                    preload={dataSaverEnabled ? 'none' : 'metadata'}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsSelectedReelVideoReady(true)}
-                    className="relative block w-full overflow-hidden bg-black text-left"
-                  >
-                    {selectedReel.thumbnailUrl ? (
-                      <img
-                        src={selectedReel.thumbnailUrl}
-                        alt={selectedReel.caption || 'Reel preview'}
-                        className="w-full aspect-[9/16] object-cover"
-                        loading="eager"
-                        decoding="async"
-                      />
-                    ) : (
-                      <div className="flex aspect-[9/16] items-center justify-center bg-muted text-sm text-white/80">
-                        Reel preview
-                      </div>
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                      <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-black shadow-sm">
-                        Tap to load video
-                      </div>
-                    </div>
-                  </button>
-                )}
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2 rounded-full bg-black/45 px-3 py-2 text-white backdrop-blur">
-                    <div className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center font-bold">
-                      {profile.avatarUrl ? (
-                        <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
-                      ) : (
-                        profile.name?.[0] || 'U'
+              <div ref={postViewerRef} className="flex-1 overflow-y-auto px-4 py-4">
+                <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 pb-8">
+                  {viewerItems.map((item) => (
+                    <div
+                      key={item._id}
+                      data-post-id={item._id}
+                      className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm"
+                    >
+                      {(item.mediaUrls?.length > 0 || item.mediaUrl) && (
+                        <ImageCarousel
+                          images={item.mediaUrls?.length > 0 ? item.mediaUrls : [item.mediaUrl]}
+                        />
                       )}
-                    </div>
-                    <span className="text-sm font-semibold">{profile.username}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowReelOptions((prev) => !prev)}
-                      className="rounded-full bg-black/45 p-2 text-white backdrop-blur"
-                    >
-                      <MoreVertical className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedReel(null);
-                        setShowReelOptions(false);
-                      }}
-                      className="rounded-full bg-black/45 p-2 text-white backdrop-blur"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {showReelOptions && (
-                  <div className="absolute top-14 right-3 z-10 min-w-[160px] overflow-hidden rounded-xl border border-white/15 bg-black/70 text-white shadow-xl backdrop-blur">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowReelOptions(false);
-                        setShowReelReportModal(true);
-                      }}
-                      className="flex w-full items-center gap-2 px-4 py-3 text-sm hover:bg-white/10"
-                    >
-                      <Flag size={16} />
-                      Report reel
-                    </button>
-                  </div>
-                )}
-              </div>
 
-              <div className="space-y-4 p-4">
-                {selectedReel.caption && (
-                  <p className="text-sm whitespace-pre-wrap text-foreground">{selectedReel.caption}</p>
-                )}
-                <div className="flex items-center gap-5">
-                  <button
-                    type="button"
-                    onClick={() => toggleReelLike(selectedReel._id, selectedReel.isLiked)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold"
-                  >
-                    <Heart className={cn('w-5 h-5', selectedReel.isLiked ? 'text-red-500 fill-red-500' : 'text-foreground')} />
-                    <span>{selectedReel.likesCount || 0}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveCommentsReelId(selectedReel._id)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold"
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                    <span>{selectedReel.commentsCount || 0}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShareModalReelId(selectedReel._id)}
-                    className="inline-flex items-center gap-2 text-sm font-semibold"
-                  >
-                    <Share2 className="w-5 h-5" />
-                    <span>{selectedReel.sharesCount || 0}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleReelSave(selectedReel._id, selectedReel.isBookmarked)}
-                    className={cn('ml-auto inline-flex items-center gap-2 text-sm font-semibold', selectedReel.isBookmarked ? 'text-yellow-500' : 'text-foreground')}
-                  >
-                    <Bookmark className={cn('w-5 h-5', selectedReel.isBookmarked ? 'fill-current' : '')} />
-                    <span>Save</span>
-                  </button>
+                      <div className="space-y-3 p-4">
+                        {item.content && (
+                          <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{item.content}</p>
+                        )}
+
+                        <PostActions
+                          postId={item._id}
+                          userId={currentUserId}
+                          initialLikes={item.likesCount}
+                          initialLiked={item.isLiked}
+                          initialBookmarked={item.isBookmarked}
+                          initialComments={item.commentsCount}
+                          initialShares={item.sharesCount}
+                        />
+
+                        <div className="flex items-center gap-4 border-t border-border/50 pt-1">
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Heart className="w-4 h-4" />
+                            <span>{item.likesCount || 0} likes</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <MessageCircle className="w-4 h-4" />
+                            <span>{item.commentsCount || 0} comments</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Users className="w-4 h-4" />
+                            <span>{item.sharesCount || 0} shares</span>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(item.createdAt).toLocaleDateString('en-US', {
+                            year: 'numeric', month: 'long', day: 'numeric'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {new Date(selectedReel.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                </p>
               </div>
             </motion.div>
           </motion.div>
@@ -1119,89 +881,6 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
           currentUserId={currentUserId}
           onClose={() => setSelectedStories(null)}
         />
-      )}
-
-      {activeCommentsReelId && (
-        <ReelCommentsPanel
-          reelId={activeCommentsReelId}
-          userId={currentUserId}
-          isAnonymous={false}
-          onClose={() => setActiveCommentsReelId(null)}
-        />
-      )}
-
-      <ShareModal
-        isOpen={Boolean(shareModalReelId)}
-        onClose={() => setShareModalReelId(null)}
-        reelId={shareModalReelId || undefined}
-        userId={currentUserId}
-        contentType="reel"
-        onShareComplete={() => {
-          if (!shareModalReelId) return;
-          const reelId = shareModalReelId;
-          setShareModalReelId(null);
-          setReels((prev) => prev.map((reel) => reel._id === reelId ? { ...reel, sharesCount: (reel.sharesCount || 0) + 1 } : reel));
-          setSavedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, sharesCount: (item.sharesCount || 0) + 1 } : item));
-          setTaggedContent((prev) => prev.map((item) => item.type === 'reel' && item._id === reelId ? { ...item, sharesCount: (item.sharesCount || 0) + 1 } : item));
-          setSelectedReel((prev: any) => prev?._id === reelId ? { ...prev, sharesCount: (prev.sharesCount || 0) + 1 } : prev);
-        }}
-      />
-
-      {showReelReportModal && (
-        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowReelReportModal(false)}>
-          <FriendlyCard className="max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-            {reportSuccess ? (
-              <div className="text-center py-6">
-                <p className="text-lg font-bold text-green-500">Report submitted</p>
-                <p className="text-sm text-muted-foreground mt-2">Thanks for helping review this reel.</p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold">Report reel</h3>
-                  <button type="button" onClick={() => setShowReelReportModal(false)} className="p-1 rounded hover:bg-muted">
-                    <X size={18} />
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {['Spam', 'Harassment', 'Inappropriate content', 'Misinformation', 'Other'].map((reason) => (
-                    <button
-                      key={reason}
-                      type="button"
-                      onClick={() => setReportReason(reason)}
-                      className={cn(
-                        'w-full rounded-xl border px-4 py-3 text-left text-sm transition-colors',
-                        reportReason === reason ? 'border-red-500 bg-red-500/10 text-red-500' : 'border-border hover:bg-muted'
-                      )}
-                    >
-                      {reason}
-                    </button>
-                  ))}
-                </div>
-                <textarea
-                  value={reportDescription}
-                  onChange={(e) => setReportDescription(e.target.value)}
-                  placeholder="Additional details (optional)"
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:border-primary"
-                  rows={4}
-                />
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setShowReelReportModal(false)} className="flex-1 rounded-xl bg-muted px-4 py-3 text-sm font-semibold">
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleReelReport}
-                    disabled={!reportReason || reportSubmitting}
-                    className="flex-1 rounded-xl bg-red-500 px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
-                  >
-                    {reportSubmitting ? 'Submitting...' : 'Submit'}
-                  </button>
-                </div>
-              </>
-            )}
-          </FriendlyCard>
-        </div>
       )}
 
       {/* Followers / Following Modals */}
@@ -1246,7 +925,11 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 ) : followData.length > 0 ? (
                   followData.map((user) => (
                     <div key={user._id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile?.(user._id)}
+                        className="flex items-center gap-3 text-left"
+                      >
                         <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">
                           {user.avatarUrl ? (
                             <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
@@ -1263,7 +946,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                           </div>
                           <span className="text-xs text-muted-foreground">{user.name}</span>
                         </div>
-                      </div>
+                      </button>
                       {user._id !== currentUserId && (
                         <FollowButton
                           userId={currentUserId}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { FriendlyCard } from './components/FriendlyCard';
-import { Home, Film, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog, Sparkles, Users, CalendarDays, GraduationCap, Copy, RefreshCw, ExternalLink, X } from 'lucide-react';
+import { Home, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, User, Search, Lock, Eye, HelpCircle, Flag, ChevronRight, UserCog, Sparkles, Users, CalendarDays, GraduationCap, Copy, RefreshCw, ExternalLink, X } from 'lucide-react';
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { PostActions } from './components/PostActions';
 import { FollowButton } from './components/FollowButton';
@@ -25,7 +25,6 @@ import { getStoredDataSaverMode, setStoredDataSaverMode, shouldEnableDataSaverBy
 const ChatRoom = lazy(() => import('./components/Chat/ChatRoom').then((m) => ({ default: m.ChatRoom })));
 const CreatePost = lazy(() => import('./components/CreatePost').then((m) => ({ default: m.CreatePost })));
 const Inbox = lazy(() => import('./components/Inbox').then((m) => ({ default: m.Inbox })));
-const ReelsTab = lazy(() => import('./components/ReelsTab').then((m) => ({ default: m.ReelsTab })));
 const NotificationPanel = lazy(() => import('./components/NotificationPanel').then((m) => ({ default: m.NotificationPanel })));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 const InstagramProfile = lazy(() => import('./components/InstagramProfile').then((m) => ({ default: m.InstagramProfile })));
@@ -48,17 +47,17 @@ function LazyScreenFallback({ label = 'Loading...' }: { label?: string }) {
 export default function App() {
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'reels' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'chat' | 'inbox' | 'profile' | 'settings'>('home');
   const [homeFeedTab, setHomeFeedTab] = useState<'feed' | 'ghost'>('feed');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [posts, setPosts] = useState<any[]>([]);
   const [activeChat, setActiveChat] = useState<any>(null);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const [reelUploadRequestId, setReelUploadRequestId] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
   const [chats, setChats] = useState<any[]>([]);
+  const [suggestedUsers, setSuggestedUsers] = useState<any[]>([]);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -142,7 +141,7 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setTelegramAuthCode(data.telegramAuthCode);
-        const updatedUser = { ...user, telegramAuthCode: data.telegramAuthCode, telegramChatId: undefined };
+        const updatedUser = normalizeUser({ ...user, telegramAuthCode: data.telegramAuthCode, telegramChatId: undefined });
         setUser(updatedUser);
         localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
         setTelegramStatus('New Telegram code generated. Send it to the bot to link your account.');
@@ -181,10 +180,10 @@ export default function App() {
       const data = await response.json();
 
       if (data?.verified && data.user) {
-        const normalizedUser = {
+        const normalizedUser = normalizeUser({
           ...data.user,
           notificationSettings: normalizeNotificationSettings(data.user.notificationSettings),
-        };
+        });
         setUser(normalizedUser);
         setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
         setNotificationSettings(normalizedUser.notificationSettings);
@@ -211,7 +210,7 @@ export default function App() {
     };
     setNotificationSettings(updatedSettings);
     if (user) {
-      const optimisticUser = { ...user, notificationSettings: updatedSettings };
+      const optimisticUser = normalizeUser({ ...user, notificationSettings: updatedSettings });
       setUser(optimisticUser);
       localStorage.setItem('ddu_user', JSON.stringify(optimisticUser));
     }
@@ -234,8 +233,9 @@ export default function App() {
           telegramNotificationsEnabled: data.telegramNotificationsEnabled,
           notificationSettings: nextSettings,
         };
-        setUser(updatedUser);
-        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+        const normalizedUpdatedUser = normalizeUser(updatedUser);
+        setUser(normalizedUpdatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(normalizedUpdatedUser));
         const label = notificationSettingLabels.find((item) => item.key === key)?.title || 'Notification setting';
         setSettingsNotice({ type: 'success', message: `${updatedSettings[key] ? 'Enabled' : 'Disabled'} ${label}.` });
       }
@@ -264,6 +264,14 @@ export default function App() {
     }
   };
 
+  const normalizeUser = useCallback((raw: any) => {
+    if (!raw) return raw;
+    const id = raw.id || raw._id?.toString?.() || raw._id;
+    return { ...raw, id };
+  }, []);
+
+  const didHandleDeepLinkRef = useRef(false);
+
   useEffect(() => {
     const storedLiteMode = getStoredDataSaverMode();
     setLiteModeEnabled(storedLiteMode ?? shouldEnableDataSaverByDefault());
@@ -272,15 +280,16 @@ export default function App() {
     if (savedUser) {
       try {
         const parsedUser = JSON.parse(savedUser);
-        setUser(parsedUser);
+        const normalized = normalizeUser(parsedUser);
+        setUser(normalized);
         setIsOnboarded(true);
         // Load telegram notifications preference
-        if (parsedUser.telegramNotificationsEnabled !== undefined) {
-          setTelegramNotificationsEnabled(parsedUser.telegramNotificationsEnabled);
+        if (normalized.telegramNotificationsEnabled !== undefined) {
+          setTelegramNotificationsEnabled(normalized.telegramNotificationsEnabled);
         }
-        setNotificationSettings(normalizeNotificationSettings(parsedUser.notificationSettings));
-        if (parsedUser.telegramAuthCode) {
-          setTelegramAuthCode(parsedUser.telegramAuthCode);
+        setNotificationSettings(normalizeNotificationSettings(normalized.notificationSettings));
+        if (normalized.telegramAuthCode) {
+          setTelegramAuthCode(normalized.telegramAuthCode);
         }
       } catch (e) {
         localStorage.removeItem('ddu_user');
@@ -298,6 +307,42 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // Handle deep links (e.g. from Telegram) like /?chatWith=<userId>&messageId=<messageId>
+  useEffect(() => {
+    if (didHandleDeepLinkRef.current) return;
+    if (!isOnboarded || !user?.id) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const chatWith = params.get('chatWith');
+    const messageId = params.get('messageId');
+    if (!chatWith) return;
+
+    didHandleDeepLinkRef.current = true;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/users/${chatWith}/profile?currentUserId=${user.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const other = data?.user || data;
+        if (!other) return;
+        const normalizedOther = {
+          id: other.id || other._id,
+          name: other.name || other.username || 'User',
+          username: other.username || '',
+          avatarUrl: other.avatarUrl || '',
+        };
+        // Store focus target so ChatRoom can scroll to it
+        if (messageId) {
+          sessionStorage.setItem('ddu_focus_message_id', messageId);
+        }
+        startChatWithUser(normalizedOther);
+      } catch {
+        // ignore deep link failures
+      }
+    })();
+  }, [isOnboarded, user?.id]);
 
   useEffect(() => {
     setStoredDataSaverMode(liteModeEnabled);
@@ -325,11 +370,24 @@ export default function App() {
     if (isOnboarded && activeTab === 'home') {
       fetchPosts();
       fetchStories();
+      fetchSuggestions();
     }
     if (isOnboarded && activeTab === 'chat') {
       fetchChats();
     }
   }, [isOnboarded, activeTab, user?.id, liteModeEnabled]);
+
+  useEffect(() => {
+    const handleFollowChanged = () => {
+      fetchSuggestions();
+      if (activeTab === 'home') {
+        fetchPosts();
+      }
+    };
+
+    window.addEventListener('social:follow-changed', handleFollowChanged as EventListener);
+    return () => window.removeEventListener('social:follow-changed', handleFollowChanged as EventListener);
+  }, [activeTab, fetchSuggestions]);
 
   // Join the user's socket room at app level so notifications and messages
   // are received even outside of ChatRoom
@@ -392,6 +450,20 @@ export default function App() {
     }
   };
 
+  async function fetchSuggestions() {
+    if (!user?.id) return;
+
+    try {
+      const response = await fetch(`/api/users/${user.id}/suggestions?limit=6`);
+      if (response.ok) {
+        const data = await response.json();
+        setSuggestedUsers(Array.isArray(data) ? data : []);
+      }
+    } catch (error) {
+      console.error('Error fetching suggestions:', error);
+    }
+  }
+
   const fetchStories = async () => {
     if (!user?.id) return;
 
@@ -409,10 +481,10 @@ export default function App() {
   };
 
   const handleOnboardingFinish = (userData: any) => {
-    const normalizedUser = {
+    const normalizedUser = normalizeUser({
       ...userData,
       notificationSettings: normalizeNotificationSettings(userData.notificationSettings),
-    };
+    });
     setUser(normalizedUser);
     setIsOnboarded(true);
     setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
@@ -429,9 +501,10 @@ export default function App() {
       ...updatedUser,
       notificationSettings: normalizeNotificationSettings(updatedUser.notificationSettings ?? user?.notificationSettings),
     };
-    setUser(mergedUser);
+    const normalized = normalizeUser(mergedUser);
+    setUser(normalized);
     setNotificationSettings(mergedUser.notificationSettings);
-    localStorage.setItem('ddu_user', JSON.stringify(mergedUser));
+    localStorage.setItem('ddu_user', JSON.stringify(normalized));
   };
 
   const handleTelegramNotificationsToggle = async () => {
@@ -440,8 +513,9 @@ export default function App() {
 
     if (user) {
       const optimisticUser = { ...user, telegramNotificationsEnabled: newValue, notificationSettings };
-      setUser(optimisticUser);
-      localStorage.setItem('ddu_user', JSON.stringify(optimisticUser));
+      const normalizedOptimisticUser = normalizeUser(optimisticUser);
+      setUser(normalizedOptimisticUser);
+      localStorage.setItem('ddu_user', JSON.stringify(normalizedOptimisticUser));
     }
 
     if (!user?.id) return;
@@ -463,8 +537,9 @@ export default function App() {
           telegramNotificationsEnabled: data.telegramNotificationsEnabled,
           notificationSettings: nextSettings,
         };
-        setUser(updatedUser);
-        localStorage.setItem('ddu_user', JSON.stringify(updatedUser));
+        const normalizedUpdatedUser = normalizeUser(updatedUser);
+        setUser(normalizedUpdatedUser);
+        localStorage.setItem('ddu_user', JSON.stringify(normalizedUpdatedUser));
         setSettingsNotice({ type: 'success', message: `Telegram notifications ${data.telegramNotificationsEnabled ? 'enabled' : 'disabled'}.` });
       }
     } catch (error) {
@@ -559,8 +634,12 @@ export default function App() {
 
     if (!normalizedUser.id || normalizedUser.id === user?.id) return;
 
+    setActiveTab('chat');
     setActiveChat(normalizedUser);
     setShowSearch(false);
+    setProfileModalUserId(null);
+    setViewingProfileUserId(null);
+    fetchChats();
   };
 
   const openCreateMenu = () => setShowCreateMenu(true);
@@ -568,12 +647,6 @@ export default function App() {
   const startCreatePost = () => {
     setShowCreateMenu(false);
     setShowCreatePost(true);
-  };
-
-  const startCreateReel = () => {
-    setShowCreateMenu(false);
-    setActiveTab('reels');
-    setReelUploadRequestId((v) => v + 1);
   };
 
   const startCreateStory = () => {
@@ -596,12 +669,19 @@ export default function App() {
   }
 
   if (activeChat) {
+    const focusMessageId = sessionStorage.getItem('ddu_focus_message_id') || undefined;
     return (
       <Suspense fallback={<LazyScreenFallback label="Loading chat..." />}>
         <ChatRoom
           currentUser={user}
           otherUser={activeChat}
-          onBack={() => setActiveChat(null)}
+          focusMessageId={focusMessageId}
+          onBack={() => {
+            setActiveChat(null);
+            setActiveTab('chat');
+            fetchChats();
+          }}
+          onViewProfile={openProfile}
         />
       </Suspense>
     );
@@ -900,6 +980,54 @@ export default function App() {
               </FriendlyCard>
             )}
 
+            {homeSection === 'feed' && suggestedUsers.length > 0 && (
+              <FriendlyCard className="space-y-4 border border-border/60 bg-card/70">
+                <div>
+                  <h3 className="text-base font-bold">Suggested for you</h3>
+                  <p className="text-sm text-muted-foreground">People you may know from mutual connections.</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {suggestedUsers.map((suggestion) => (
+                    <div key={suggestion.id} className="flex items-center gap-3 rounded-2xl border border-border bg-background px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => openProfile(suggestion.id)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <div className="h-12 w-12 rounded-full overflow-hidden bg-muted flex items-center justify-center font-bold">
+                          {suggestion.avatarUrl ? (
+                            <img src={suggestion.avatarUrl} alt={suggestion.name} className="h-full w-full object-cover" />
+                          ) : (
+                            suggestion.name?.[0] || 'U'
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{suggestion.username}</p>
+                          <p className="truncate text-xs text-muted-foreground">{suggestion.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {suggestion.mutualCount > 0
+                              ? `${suggestion.mutualCount} mutual connection${suggestion.mutualCount === 1 ? '' : 's'}`
+                              : 'New on campus'}
+                          </p>
+                        </div>
+                      </button>
+                      <FollowButton
+                        userId={user?.id}
+                        targetId={suggestion.id}
+                        initialIsFollowing={false}
+                        className="shrink-0 rounded-lg px-3 py-2 text-xs"
+                        onChange={(isFollowing) => {
+                          if (isFollowing) {
+                            setSuggestedUsers((prev) => prev.filter((item) => item.id !== suggestion.id));
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </FriendlyCard>
+            )}
+
             {visiblePosts.length > 0 ? visiblePosts.map((post) => {
               const contentType = normalizeContentType(post.contentType);
               return (
@@ -986,18 +1114,6 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'reels' && (
-          <Suspense fallback={<LazyScreenFallback label="Loading reels..." />}>
-            <ReelsTab
-              user={user}
-              onViewProfile={openProfile}
-              onHashtagClick={openHashtagSearch}
-              openUploadRequestId={reelUploadRequestId}
-              dataSaverEnabled={liteModeEnabled}
-            />
-          </Suspense>
-        )}
-
         {activeTab === 'chat' && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold">Direct Messages</h2>
@@ -1008,17 +1124,31 @@ export default function App() {
                   onClick={() => setActiveChat(chat.user)}
                   className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-all cursor-pointer"
                 >
-                  <div className="w-12 h-12 rounded-full bg-muted shrink-0 flex items-center justify-center font-bold text-foreground">
-                    {chat.user.name?.[0] || 'U'}
+                  <div className="w-12 h-12 rounded-full bg-muted shrink-0 flex items-center justify-center overflow-hidden font-bold text-foreground">
+                    {chat.user.avatarUrl ? (
+                      <img src={chat.user.avatarUrl} alt={chat.user.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                    ) : (
+                      chat.user.name?.[0] || 'U'
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-bold truncate">{chat.user.name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        {chat.lastMessage.unreadCount > 0 && (
+                          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                            {chat.lastMessage.unreadCount}
+                          </span>
+                        )}
+                        <p className="text-[10px] text-muted-foreground">
+                          {new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">{chat.lastMessage.text}</p>
+                    <p className={cn('text-xs truncate', chat.lastMessage.unreadCount > 0 ? 'font-semibold text-foreground' : 'text-muted-foreground')}>
+                      {chat.lastMessage.isMine ? 'You: ' : ''}
+                      {chat.lastMessage.text}
+                    </p>
                   </div>
                 </FriendlyCard>
               )) : (
@@ -1033,7 +1163,7 @@ export default function App() {
 
         {activeTab === 'inbox' && user && (
           <Suspense fallback={<LazyScreenFallback label="Loading inbox..." />}>
-            <Inbox userId={user.id} />
+            <Inbox userId={user.id} onViewProfile={openProfile} />
           </Suspense>
         )}
 
@@ -1056,6 +1186,7 @@ export default function App() {
                     setActiveTab('settings');
                   }}
                   onMessageUser={startChatWithUser}
+                  onViewProfile={openProfile}
                 />
               </Suspense>
             </div>
@@ -1091,7 +1222,7 @@ export default function App() {
                   </div>
                   <div className="flex-1">
                     <p className="font-bold">Admin Dashboard</p>
-                    <p className="text-xs text-muted-foreground">Manage users, posts, and reels</p>
+                    <p className="text-xs text-muted-foreground">Manage users and posts</p>
                   </div>
                   <ChevronRight size={16} className="text-muted-foreground" />
                 </FriendlyCard>
@@ -1447,14 +1578,6 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={startCreateReel}
-                className="w-full rounded-2xl border border-border bg-background hover:bg-muted transition-colors px-4 py-4 text-left"
-              >
-                <p className="font-semibold">Reel</p>
-                <p className="text-xs text-muted-foreground">Upload a short video</p>
-              </button>
-              <button
-                type="button"
                 onClick={startCreateStory}
                 className="w-full rounded-2xl border border-border bg-background hover:bg-muted transition-colors px-4 py-4 text-left"
               >
@@ -1470,7 +1593,6 @@ export default function App() {
         <Dock
           items={[
             { icon: Home, label: 'Home', onClick: () => (activeTab === 'home' ? (fetchPosts(), fetchStories()) : setActiveTab('home')) },
-            { icon: Film, label: 'Reels', onClick: () => setActiveTab('reels') },
             { icon: Plus, label: 'Create', onClick: openCreateMenu },
             { icon: MessageSquare, label: 'Chat', onClick: () => (activeTab === 'chat' ? fetchChats() : setActiveTab('chat')) },
             { icon: User, label: 'Profile', onClick: openOwnProfile },

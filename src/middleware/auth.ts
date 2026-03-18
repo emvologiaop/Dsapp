@@ -1,7 +1,6 @@
 import type { NextFunction, Response } from 'express';
 import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
-import { Reel } from '../models/Reel.js';
 
 type RequestWithEntities = any;
 
@@ -45,17 +44,5 @@ export async function requirePostOwnership(req: RequestWithEntities, res: Respon
     return res.status(403).json({ error: 'You do not own this post' });
   }
   req.post = post;
-  next();
-}
-
-export async function requireReelOwnership(req: RequestWithEntities, res: Response, next: NextFunction) {
-  const reel = await Reel.findById(req.params.reelId);
-  if (!reel) {
-    return res.status(404).json({ error: 'Reel not found' });
-  }
-  if (!req.user || reel.userId.toString() !== req.user._id.toString()) {
-    return res.status(403).json({ error: 'You do not own this reel' });
-  }
-  req.reel = reel;
   next();
 }

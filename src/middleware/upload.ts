@@ -1,7 +1,6 @@
 import multer from 'multer';
 
 const imageTypes = /image\/(jpeg|jpg|png|webp|gif)/i;
-const videoTypes = /video\//i;
 
 const memoryStorage = multer.memoryStorage();
 
@@ -15,12 +14,6 @@ export const uploadImage = multer({
   storage: memoryStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: fileFilterFor(imageTypes),
-});
-
-export const uploadVideo = multer({
-  storage: memoryStorage,
-  limits: { fileSize: 200 * 1024 * 1024 },
-  fileFilter: fileFilterFor(videoTypes),
 });
 
 export const uploadMultipleImages = multer({

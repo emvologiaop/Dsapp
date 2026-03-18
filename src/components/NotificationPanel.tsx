@@ -79,6 +79,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
     try {
       await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+      window.dispatchEvent(new CustomEvent('social:notifications-read', { detail: { ids: [id] } }));
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
     }
@@ -89,6 +90,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
       const unread = notifications.filter(n => !n.isRead);
       await Promise.all(unread.map(n => fetch(`/api/notifications/${n.id}/read`, { method: 'POST' })));
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+      window.dispatchEvent(new CustomEvent('social:notifications-read', { detail: { ids: unread.map((n) => n.id), all: true } }));
     } catch (error) {
       console.error('Failed to mark all as read:', error);
     }

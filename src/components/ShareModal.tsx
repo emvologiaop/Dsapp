@@ -14,9 +14,7 @@ interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   postId?: string;
-  reelId?: string;
   userId: string;
-  contentType?: 'post' | 'reel';
   onShareComplete?: () => void;
 }
 
@@ -24,9 +22,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   postId,
-  reelId,
   userId,
-  contentType = 'post',
   onShareComplete,
 }) => {
   const [query, setQuery] = useState('');
@@ -88,23 +84,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const send = async () => {
-    const targetId = contentType === 'reel' ? reelId : postId;
-    if (!targetId || !userId) return;
+    if (!postId || !userId) return;
     if (selectedIds.length === 0) return;
     setSending(true);
     try {
-      const res = await fetch(
-        contentType === 'reel' ? `/api/reels/${targetId}/share` : `/api/posts/${targetId}/share`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(
-            contentType === 'reel'
-              ? { userId, targetUserIds: selectedIds }
-              : { userId, receiverIds: selectedIds }
-          ),
-        }
-      );
+      const res = await fetch(`/api/posts/${postId}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, receiverIds: selectedIds }),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || 'Failed to share');
@@ -129,7 +117,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-bold">Share {contentType}</h3>
+          <h3 className="font-bold">Share post</h3>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
             <X size={18} />
           </button>

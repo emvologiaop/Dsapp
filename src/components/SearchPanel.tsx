@@ -12,7 +12,7 @@ interface SearchPanelProps {
 
 export const SearchPanel: React.FC<SearchPanelProps> = ({ initialQuery = '', onClose, onViewProfile, onStartChat, currentUserId }) => {
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState<any>({ users: [], posts: [], reels: [] });
+  const [results, setResults] = useState<any>({ users: [], posts: [] });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ initialQuery = '', onC
   useEffect(() => {
     const q = query.trim();
     if (!q) {
-      setResults({ users: [], posts: [], reels: [] });
+      setResults({ users: [], posts: [] });
       return;
     }
     const controller = new AbortController();
@@ -61,7 +61,7 @@ export const SearchPanel: React.FC<SearchPanelProps> = ({ initialQuery = '', onC
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search users, posts, reels..."
+            placeholder="Search users and posts..."
             className="flex-1 bg-transparent outline-none text-sm"
           />
         </div>

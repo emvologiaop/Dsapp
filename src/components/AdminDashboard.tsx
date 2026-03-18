@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
-import { Users, FileText, Film, Shield, Search, X, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone, BadgeCheck, Wrench, Clock, XCircle } from 'lucide-react';
+import { Users, FileText, Shield, Search, X, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone, BadgeCheck, Wrench, Clock, XCircle } from 'lucide-react';
 import { AdManagement } from './AdManagement';
 
 interface AdminStats {
   stats: {
     users: { total: number; banned: number; active: number };
     posts: { total: number; deleted: number; active: number };
-    reels: { total: number; deleted: number; active: number };
   };
   recent: {
     users: any[];
@@ -45,15 +44,6 @@ interface Post {
   approvalStatus?: 'approved' | 'pending' | 'rejected';
 }
 
-interface Reel {
-  _id: string;
-  caption: string;
-  userId: { name: string; username: string };
-  isDeleted: boolean;
-  createdAt: string;
-  videoUrl: string;
-}
-
 interface VerificationRequest {
   _id: string;
   name: string;
@@ -74,11 +64,10 @@ interface Props {
 }
 
 export function AdminDashboard({ userId, onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'reels' | 'ads' | 'verification' | 'maintenance'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'posts' | 'ads' | 'verification' | 'maintenance'>('stats');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -111,8 +100,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
       fetchUsers();
     } else if (activeTab === 'posts') {
       fetchPosts();
-    } else if (activeTab === 'reels') {
-      fetchReels();
     } else if (activeTab === 'verification') {
       fetchVerificationRequests();
     } else if (activeTab === 'maintenance') {
@@ -162,22 +149,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
       }
     } catch (error) {
       console.error('Failed to fetch posts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchReels = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/admin/reels?userId=${userId}&page=${page}`);
-      if (response.ok) {
-        const data = await response.json();
-        setReels(data.reels);
-        setTotalPages(data.pagination.pages);
-      }
-    } catch (error) {
-      console.error('Failed to fetch reels:', error);
     } finally {
       setLoading(false);
     }
@@ -267,27 +238,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
     } catch (error) {
       console.error('Failed to moderate post:', error);
       alert('Failed to moderate post');
-    }
-  };
-
-  const handleDeleteReel = async (reelId: string) => {
-    if (!confirm('Are you sure you want to delete this reel?')) return;
-
-    try {
-      const response = await fetch(`/api/admin/reels/${reelId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId }),
-      });
-
-      if (response.ok) {
-        fetchReels();
-      } else {
-        alert('Failed to delete reel');
-      }
-    } catch (error) {
-      console.error('Failed to delete reel:', error);
-      alert('Failed to delete reel');
     }
   };
 
@@ -407,7 +357,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
             { id: 'stats', label: 'Overview', icon: Shield },
             { id: 'users', label: 'Users', icon: Users },
             { id: 'posts', label: 'Posts', icon: FileText },
-            { id: 'reels', label: 'Reels', icon: Film },
             { id: 'ads', label: 'Ads', icon: Megaphone },
             { id: 'verification', label: 'Verification', icon: BadgeCheck },
             { id: 'maintenance', label: 'Maintenance', icon: Wrench },
@@ -478,29 +427,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Deleted</span>
                     <span className="font-bold text-red-500">{stats.stats.posts.deleted}</span>
-                  </div>
-                </div>
-              </FriendlyCard>
-
-              <FriendlyCard className="p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-3 bg-pink-500/20 rounded-lg">
-                    <Film size={24} className="text-pink-500" />
-                  </div>
-                  <h3 className="text-lg font-bold">Reels</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Total</span>
-                    <span className="font-bold">{stats.stats.reels.total}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Active</span>
-                    <span className="font-bold text-green-500">{stats.stats.reels.active}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Deleted</span>
-                    <span className="font-bold text-red-500">{stats.stats.reels.deleted}</span>
                   </div>
                 </div>
               </FriendlyCard>
@@ -730,69 +656,6 @@ export function AdminDashboard({ userId, onClose }: Props) {
                           </button>
                         )}
                       </div>
-                    </div>
-                  </FriendlyCard>
-                ))}
-              </div>
-            )}
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex justify-center gap-2">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="px-4 py-2">
-                  Page {page} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'reels' && (
-          <div className="space-y-6">
-            {loading ? (
-              <div className="text-center py-20 text-muted-foreground">Loading...</div>
-            ) : (
-              <div className="space-y-3">
-                {reels.map((reel) => (
-                  <FriendlyCard key={reel._id} className="p-4">
-                    <div className="flex justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <p className="font-bold">{reel.userId?.name || 'Unknown'}</p>
-                          <span className="text-xs text-muted-foreground">@{reel.userId?.username}</span>
-                          {reel.isDeleted && (
-                            <span className="px-2 py-0.5 bg-red-500/20 text-red-500 text-xs rounded-full font-medium">
-                              Deleted
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-foreground mb-2">{reel.caption || 'No caption'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(reel.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      {!reel.isDeleted && (
-                        <button
-                          onClick={() => handleDeleteReel(reel._id)}
-                          className="p-2 h-fit bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      )}
                     </div>
                   </FriendlyCard>
                 ))}
