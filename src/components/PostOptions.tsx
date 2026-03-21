@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MoreVertical, Edit2, Trash2, X, Flag } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface PostOptionsProps {
   postId: string;
@@ -38,7 +39,7 @@ export function PostOptions({
     try {
       const response = await fetch(`/api/posts/${postId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
 
@@ -63,7 +64,7 @@ export function PostOptions({
     try {
       const response = await fetch(`/api/posts/${postId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           userId,
           content: editContent,
@@ -93,7 +94,7 @@ export function PostOptions({
     try {
       const response = await fetch('/api/reports', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           reporterId: userId,
           type: 'post',
@@ -130,7 +131,7 @@ export function PostOptions({
         </button>
 
         {showMenu && (
-          <div className="absolute right-0 top-8 bg-background border border-border rounded-lg shadow-lg z-10 min-w-[150px]">
+          <div className="absolute right-0 top-8 z-10 min-w-[170px] overflow-hidden rounded-2xl border border-white/35 bg-background/92 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.85)] backdrop-blur-xl">
             {isOwner && (
               <>
                 <button
@@ -138,14 +139,14 @@ export function PostOptions({
                     setShowEditModal(true);
                     setShowMenu(false);
                   }}
-                  className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm"
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/60"
                 >
                   <Edit2 size={16} />
                   Edit Post
                 </button>
                 <button
                   onClick={handleDelete}
-                  className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm text-red-500"
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-red-500 transition-colors hover:bg-muted/60"
                 >
                   <Trash2 size={16} />
                   Delete Post
@@ -158,7 +159,7 @@ export function PostOptions({
                   setShowReportModal(true);
                   setShowMenu(false);
                 }}
-                className="w-full px-4 py-2 text-left hover:bg-muted transition-colors flex items-center gap-2 text-sm text-red-500"
+                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm text-red-500 transition-colors hover:bg-muted/60"
               >
                 <Flag size={16} />
                 Report Post
@@ -170,13 +171,13 @@ export function PostOptions({
 
       {/* Edit Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <FriendlyCard className="max-w-2xl w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <FriendlyCard className="w-full max-w-2xl border-white/30 bg-background/88 p-6 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">Edit Post</h3>
               <button
                 onClick={() => setShowEditModal(false)}
-                className="p-1 hover:bg-muted rounded transition-colors"
+                className="rounded-full p-1 transition-colors hover:bg-muted"
               >
                 <X size={20} />
               </button>
@@ -185,7 +186,7 @@ export function PostOptions({
             <textarea
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
-              className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+              className="w-full resize-none rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
               rows={6}
               placeholder="What's on your mind?"
             />
@@ -193,14 +194,14 @@ export function PostOptions({
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setShowEditModal(false)}
-                className="flex-1 px-4 py-2 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                className="flex-1 rounded-xl bg-muted px-4 py-2.5 transition-colors hover:bg-muted/80"
                 disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 onClick={handleEdit}
-                className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-colors hover:bg-primary/90 disabled:opacity-50"
                 disabled={isSubmitting || !editContent.trim()}
               >
                 {isSubmitting ? 'Saving...' : 'Save'}

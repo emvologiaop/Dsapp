@@ -60,7 +60,7 @@ export const UserTagSelector: React.FC<UserTagSelectorProps> = ({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-border bg-background px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/50"
+        className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 text-sm outline-none shadow-sm backdrop-blur focus:ring-2 focus:ring-primary/50"
       />
 
       {selectedUsers.length > 0 && (
@@ -70,7 +70,7 @@ export const UserTagSelector: React.FC<UserTagSelectorProps> = ({
               key={user._id}
               type="button"
               onClick={() => removeUser(user._id)}
-              className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground"
+              className="rounded-full border border-white/35 bg-background/78 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm"
             >
               @{user.username} x
             </button>
@@ -79,15 +79,15 @@ export const UserTagSelector: React.FC<UserTagSelectorProps> = ({
       )}
 
       {results.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-border bg-background p-2">
+        <div className="space-y-2 rounded-2xl border border-white/35 bg-background/82 p-2 shadow-sm backdrop-blur">
           {results.map((user) => (
             <button
               key={user._id}
               type="button"
               onClick={() => addUser(user)}
-              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-muted"
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted/60"
             >
-              <div className="h-8 w-8 overflow-hidden rounded-full bg-muted flex items-center justify-center text-xs font-bold">
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-muted text-xs font-bold">
                 {user.avatarUrl ? <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" /> : (user.name?.[0] || 'U')}
               </div>
               <div className="min-w-0">

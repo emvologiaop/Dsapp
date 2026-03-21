@@ -50,7 +50,11 @@ export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
 
   return (
     <div className="space-y-6 pb-24">
-      <h2 className="text-2xl font-bold px-4">Shared with you</h2>
+      <FriendlyCard className="mx-4 space-y-2 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/10">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Inbox</p>
+        <h2 className="text-3xl font-bold tracking-[-0.04em]">Shared with you</h2>
+        <p className="text-sm text-muted-foreground">Posts your friends send directly to you appear here.</p>
+      </FriendlyCard>
       
       {messages.map((message) => (
         <div key={message.shareId} className="space-y-2">
@@ -58,7 +62,7 @@ export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
             <button
               type="button"
               onClick={() => onViewProfile?.(message.sender.id || message.sender._id)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 rounded-full border border-white/40 bg-background/80 px-2.5 py-1.5 shadow-sm"
             >
               <img 
                 src={message.sender.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${message.sender.username}`} 
@@ -70,8 +74,8 @@ export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
             <span>shared this with you</span>
           </div>
           
-          <FriendlyCard className="space-y-4 p-0 overflow-hidden border-primary/20">
-            <div className="p-4 flex items-center justify-between">
+          <FriendlyCard className="space-y-4 overflow-hidden border-primary/15 bg-background/82 p-0">
+            <div className="flex items-center justify-between p-4">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -79,7 +83,7 @@ export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
                   disabled={message.post.isAnonymous || !message.post.userId?._id}
                   className="flex items-center gap-3 text-left disabled:cursor-default"
                 >
-                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                  <div className="h-10 w-10 rounded-2xl bg-muted flex items-center justify-center overflow-hidden ring-1 ring-white/40">
                     {message.post.isAnonymous ? <Ghost size={16} className="text-muted-foreground" /> : message.post.userId?.avatarUrl ? (
                       <img src={message.post.userId.avatarUrl} alt={message.post.userId.name} className="w-full h-full object-cover" />
                     ) : (
@@ -103,7 +107,7 @@ export const Inbox: React.FC<InboxProps> = ({ userId, onViewProfile }) => {
                 />
               </div>
             )}
-            <div className="p-4 space-y-2">
+            <div className="space-y-3 p-4">
               <p className="text-sm text-foreground leading-relaxed">
                 {message.post.content}
               </p>

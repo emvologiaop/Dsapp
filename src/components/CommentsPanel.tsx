@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Ghost, MessageCircle, CornerDownRight, Heart } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface Comment {
   _id: string;
@@ -16,7 +17,7 @@ interface Comment {
 interface CommentsPanelProps {
   postId: string;
   userId: string;
-  isAnonymous: boolean;
+  isAnonymous?: boolean;
   onClose: () => void;
   onViewProfile?: (userId?: string | null) => void;
 }
@@ -32,7 +33,7 @@ const getTimeAgo = (dateStr: string): string => {
   return `${Math.floor(seconds / 604800)}w`;
 };
 
-export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, isAnonymous, onClose, onViewProfile }) => {
+export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, onClose, onViewProfile }) => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
   const [isPosting, setIsPosting] = useState(false);
@@ -98,7 +99,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
 
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, content: text, isAnonymous: false }),
       });
 
@@ -142,15 +143,18 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
         initial={{ opacity: 0, y: 100 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 100 }}
-        className="fixed inset-0 bg-background z-50 flex flex-col shadow-2xl md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[75vh] md:rounded-t-2xl md:border md:border-border"
+        className="fixed inset-0 z-50 flex flex-col bg-background/95 shadow-2xl md:inset-x-0 md:top-auto md:bottom-0 md:max-h-[78vh] md:rounded-t-[30px] md:border md:border-white/30 md:bg-background/92 md:backdrop-blur-2xl"
       >
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-bold text-lg">Comments</h3>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
+        <div className="flex items-center justify-between border-b border-white/30 p-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Conversation</p>
+            <h3 className="text-lg font-bold tracking-[-0.03em]">Comments</h3>
+          </div>
+          <button onClick={onClose} className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border bg-muted/30">
+        <div className="border-b border-white/20 bg-background/70 px-4 py-2 text-xs text-muted-foreground">
           Comments always use your real profile.
         </div>
 
@@ -163,7 +167,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
           ) : (
             comments.map((comment) => (
               <div key={comment._id} className="space-y-2">
-                <div className="flex gap-3">
+                <div className="flex gap-3 rounded-[22px] border border-white/25 bg-background/70 px-3 py-3 shadow-sm">
                   <button
                     type="button"
                     onClick={() => {
@@ -223,7 +227,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
 
                 {/* Nested Replies */}
                 {expandedReplies.has(comment._id) && replies[comment._id] && (
-                  <div className="ml-11 space-y-3 pl-3 border-l-2 border-muted">
+                  <div className="ml-11 space-y-3 border-l-2 border-muted pl-3">
                     {replies[comment._id].map((reply) => (
                       <div key={reply._id} className="flex gap-2">
                         <button
@@ -281,7 +285,7 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
           )}
         </div>
 
-        <div className="p-4 border-t border-border">
+        <div className="border-t border-white/30 p-4">
           {replyingTo && (
             <div className="flex items-center justify-between text-xs text-muted-foreground mb-2 px-1">
               <span>
@@ -295,20 +299,20 @@ export const CommentsPanel: React.FC<CommentsPanelProps> = ({ postId, userId, is
               </button>
             </div>
           )}
-          <div className="flex items-center gap-3 bg-muted rounded-xl p-2 pl-4">
+          <div className="flex items-center gap-3 rounded-[24px] border border-white/35 bg-background/75 p-2 pl-4 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.7)] backdrop-blur">
             <input
               ref={inputRef}
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-              placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : isAnonymous ? 'Comment anonymously...' : 'Add a comment...'}
-              className="flex-1 bg-transparent outline-none text-sm py-1"
+              placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : 'Add a comment...'}
+              className="flex-1 bg-transparent py-1 text-sm outline-none"
             />
             <button
               onClick={handleSubmit}
               disabled={isPosting || !text.trim()}
-              className="p-2 bg-primary text-primary-foreground rounded-lg transition-all active:scale-90 disabled:opacity-50"
+              className="rounded-2xl bg-primary p-2.5 text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-all active:scale-90 disabled:opacity-50"
             >
               <Send size={16} />
             </button>

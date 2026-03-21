@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Search, Send } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 type UserResult = {
   _id: string;
@@ -90,7 +91,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     try {
       const res = await fetch(`/api/posts/${postId}/share`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, receiverIds: selectedIds }),
       });
       if (!res.ok) {
@@ -111,20 +112,23 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   return (
     <>
     <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm hidden md:block" onClick={onClose} />
-    <div className="fixed inset-0 bg-background z-50 w-full flex flex-col md:bg-transparent md:items-center md:justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex w-full flex-col bg-background/95 md:items-center md:justify-center md:bg-transparent" onClick={onClose}>
       <div
-        className="w-full flex-1 bg-background border-0 shadow-none md:w-[400px] md:max-w-lg md:flex-none md:rounded-2xl md:border md:border-border md:shadow-2xl overflow-hidden"
+        className="w-full flex-1 overflow-hidden bg-background/96 shadow-none md:w-[420px] md:max-w-lg md:flex-none md:rounded-[30px] md:border md:border-white/30 md:bg-background/88 md:shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)] md:backdrop-blur-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 className="font-bold">Share post</h3>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
+        <div className="flex items-center justify-between border-b border-white/30 px-5 py-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Send</p>
+            <h3 className="font-bold tracking-[-0.03em]">Share post</h3>
+          </div>
+          <button onClick={onClose} className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted">
             <X size={18} />
           </button>
         </div>
 
         <div className="p-4 space-y-3">
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+          <div className="flex items-center gap-2 rounded-2xl border border-white/35 bg-background/80 px-3 py-3 shadow-sm">
             <Search size={16} className="text-muted-foreground" />
             <input
               value={query}
@@ -134,7 +138,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             />
           </div>
 
-          <FriendlyCard className="p-3 space-y-2 max-h-[45vh] overflow-y-auto">
+          <FriendlyCard className="max-h-[45vh] space-y-2 overflow-y-auto border-white/35 bg-background/78 p-3">
             {loading ? (
               <div className="text-sm text-muted-foreground py-4 text-center">Searching...</div>
             ) : results.length === 0 ? (
@@ -149,7 +153,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                       type="button"
                       key={u._id}
                       onClick={() => toggle(u._id)}
-                      className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-muted/50 transition-colors text-left"
+                      className="flex w-full items-center gap-3 rounded-2xl border border-white/30 bg-background/75 p-3 text-left transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted/40"
                     >
                       <div className="w-10 h-10 rounded-full bg-muted overflow-hidden flex items-center justify-center font-bold">
                         {u.avatarUrl ? <img src={u.avatarUrl} alt="" className="w-full h-full object-cover" /> : (u.name?.[0] || 'U')}
@@ -158,7 +162,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         <p className="text-sm font-semibold truncate">{u.username}</p>
                         <p className="text-xs text-muted-foreground truncate">{u.name}</p>
                       </div>
-                      <div className="w-5 h-5 rounded border border-border flex items-center justify-center">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-md border border-border">
                         {checked ? <div className="w-3 h-3 rounded bg-primary" /> : null}
                       </div>
                     </button>
@@ -171,7 +175,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             type="button"
             onClick={send}
             disabled={selectedCount === 0 || sending}
-            className="w-full rounded-xl bg-primary text-primary-foreground px-4 py-3 font-semibold disabled:opacity-60 transition-all active:scale-[0.99] inline-flex items-center justify-center gap-2"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 font-semibold text-primary-foreground shadow-[0_20px_40px_-24px_rgba(15,23,42,0.9)] transition-all duration-300 active:scale-[0.99] disabled:opacity-60"
           >
             <Send size={18} />
             {sending ? 'Sending...' : `Send (${selectedCount})`}

@@ -1,4 +1,5 @@
 import { isValidObjectId } from './validation.js';
+import { extractBearerToken, verifyAuthToken } from './authToken.js';
 
 type RequestLike = {
   method?: string;
@@ -38,6 +39,15 @@ export function shouldBypassOriginCheck(req: RequestLike): boolean {
 }
 
 export function getActorRateLimitKey(req: RequestLike): string {
+  const authHeader = typeof req.headers?.authorization === 'string' ? req.headers.authorization : undefined;
+  const token = extractBearerToken(authHeader);
+  if (token) {
+    const payload = verifyAuthToken(token);
+    if (payload?.userId && isValidObjectId(payload.userId)) {
+      return payload.userId;
+    }
+  }
+
   const candidates = [
     req.body?.userId,
     req.body?.reporterId,

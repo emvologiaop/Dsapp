@@ -3,6 +3,7 @@ import { X, Camera, Loader2, BadgeCheck, Clock, XCircle, CheckCircle } from 'luc
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { FriendlyCard } from './FriendlyCard';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface EditProfileModalProps {
   user: any;
@@ -77,6 +78,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       formDataUpload.append('avatar', avatarFile);
       const response = await fetch(`/api/users/${user.id}/avatar`, {
         method: 'PUT',
+        headers: withAuthHeaders(),
         body: formDataUpload,
       });
       if (response.ok) {
@@ -112,7 +114,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
       const response = await fetch(`/api/users/${user.id}/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           ...formData,
           username: formData.username.toLowerCase(),
@@ -154,7 +156,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
     try {
       const response = await fetch(`/api/users/${user.id}/verification-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId: user.id, realName: verifRealName, photoUrl: verifPhotoUrl, note: verifNote }),
       });
       const data = await response.json();
@@ -245,13 +247,16 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className="relative w-full max-w-lg max-h-[90vh] overflow-hidden"
         >
-          <FriendlyCard className="p-0 border border-border shadow-2xl">
+          <FriendlyCard className="overflow-hidden border border-white/30 bg-background/88 p-0 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)]">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="text-lg font-bold">Edit Profile</h2>
+            <div className="flex items-center justify-between border-b border-white/30 px-6 py-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Profile</p>
+                <h2 className="text-lg font-bold tracking-[-0.03em]">Edit Profile</h2>
+              </div>
               <button
                 onClick={onClose}
-                className="p-2 hover:bg-muted rounded-full transition-colors"
+                className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -263,7 +268,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 {/* Profile Picture */}
                 <div className="flex items-center gap-6">
                   <div className="relative">
-                    <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0 border-[3px] border-primary/20 shadow-md">
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[28px] border-[3px] border-primary/20 bg-muted text-2xl font-bold shadow-md">
                       {avatarPreview ? (
                         <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
                       ) : user?.avatarUrl ? (
@@ -307,7 +312,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       name="username"
                       value={formData.username}
                       onChange={handleChange}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       placeholder="username"
                       required
                     />
@@ -325,7 +330,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
-                    className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                    className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                     placeholder="Your full name"
                     required
                   />
@@ -342,7 +347,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       name="website"
                       value={formData.website}
                       onChange={handleChange}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       placeholder="yourwebsite.com"
                     />
                   </div>
@@ -355,7 +360,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       name="location"
                       value={formData.location}
                       onChange={handleChange}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       placeholder="City, Country"
                     />
                   </div>
@@ -368,7 +373,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                       name="department"
                       value={formData.department}
                       onChange={handleChange}
-                      className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                      className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       placeholder="Computer Science, Engineering, etc."
                     />
                   </div>
@@ -382,11 +387,11 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
               </form>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-border flex gap-3">
+              <div className="flex gap-3 border-t border-white/30 px-6 py-4">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 px-6 py-2.5 bg-muted hover:bg-muted/80 text-foreground font-semibold rounded-lg transition-all"
+                  className="flex-1 rounded-2xl bg-muted px-6 py-3 font-semibold text-foreground transition-all hover:bg-muted/80"
                   disabled={isLoading}
                 >
                   Cancel
@@ -396,7 +401,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                   form="edit-profile-form"
                   disabled={isLoading}
                   className={cn(
-                    "flex-1 px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
+                    "flex-1 flex items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-all hover:bg-primary/90",
                     isLoading && "opacity-50 cursor-not-allowed"
                   )}
                 >
@@ -433,7 +438,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                           type="text"
                           value={verifRealName}
                           onChange={e => setVerifRealName(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                        className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                           placeholder="Enter your real full name"
                           required
                         />
@@ -446,7 +451,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                           type="url"
                           value={verifPhotoUrl}
                           onChange={e => setVerifPhotoUrl(e.target.value)}
-                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                          className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                           placeholder="https://example.com/your-photo.jpg"
                           required
                         />
@@ -459,7 +464,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                           value={verifNote}
                           onChange={e => setVerifNote(e.target.value)}
                           rows={2}
-                          className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                          className="w-full resize-none rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                           placeholder="E.g. I am a professor at XYZ university, or any additional context..."
                         />
                       </div>
@@ -476,7 +481,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                         </div>
                       )}
 
-                      <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground space-y-1">
+                      <div className="space-y-1 rounded-2xl border border-white/35 bg-background/70 p-4 text-xs text-muted-foreground">
                         <p className="font-semibold text-foreground">How it works:</p>
                         <p>🔵 <strong>Blue badge</strong> — Awarded to verified personal accounts.</p>
                         <p>🟡 <strong>Gold badge</strong> — Awarded to academics, organizations, or notable accounts.</p>
@@ -487,7 +492,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
                         type="submit"
                         disabled={verifLoading}
                         className={cn(
-                          "w-full px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm",
+                          "flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-all hover:bg-primary/90",
                           verifLoading && "opacity-50 cursor-not-allowed"
                         )}
                       >

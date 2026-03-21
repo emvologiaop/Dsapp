@@ -17,6 +17,11 @@
 @layer base {
   body {
     @apply antialiased bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at top left, color-mix(in oklab, var(--primary) 10%, transparent) 0, transparent 30%),
+      radial-gradient(circle at top right, color-mix(in oklab, var(--accent) 12%, transparent) 0, transparent 28%),
+      linear-gradient(180deg, color-mix(in oklab, var(--background) 94%, white 6%) 0%, var(--background) 100%);
+    background-attachment: fixed;
   }
   * {
     @apply border-border outline-ring/50;
@@ -28,7 +33,23 @@
 
 @layer components {
   .friendly-card {
-    @apply bg-card border border-border rounded-3xl shadow-sm p-6;
+    @apply relative overflow-hidden rounded-[28px] border border-white/50 bg-card/82 p-6 shadow-[0_20px_60px_-28px_rgba(15,23,42,0.38)] backdrop-blur-xl transition-all duration-300;
+  }
+
+  .friendly-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(135deg, color-mix(in oklab, var(--primary) 9%, transparent), transparent 42%),
+      linear-gradient(180deg, color-mix(in oklab, white 45%, transparent), transparent 26%);
+    opacity: 0.9;
+    pointer-events: none;
+  }
+
+  .friendly-card > * {
+    position: relative;
+    z-index: 1;
   }
 }
 

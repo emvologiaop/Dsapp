@@ -22,18 +22,6 @@ View your app in AI Studio: https://ai.studio/apps/65c92b19-8cd2-4e0d-9004-44c63
 
 See [CHAT_FEATURES.md](CHAT_FEATURES.md) for complete chat documentation.
 
-### Reels with Video/Image Compression 🎬
-- **Upload Videos & Images**: Share content as reels
-- **Automatic Compression**: Videos/images compressed to 720p max resolution
-- **Quality Optimization**: 70% JPEG quality for optimal size/quality balance
-- **File Validation**: Max 50MB with user-friendly error messages
-- **Like, Comment, Share**: Full social interaction features
-- **Vertical Format**: Optimized 9:16 aspect ratio for mobile viewing
-
-See [REELS_FEATURES.md](REELS_FEATURES.md) for complete reels documentation.
-See [VIDEO_STREAMING_ARCHITECTURE.md](VIDEO_STREAMING_ARCHITECTURE.md) for detailed explanation of how video streaming works.
-See [VIDEO_STREAMING_DIAGRAMS.md](VIDEO_STREAMING_DIAGRAMS.md) for visual flow diagrams.
-
 ### Telegram Bot Integration 🤖
 - **Account Linking**: Link your DDU Social account to Telegram
 - **Real-time Notifications**: Receive notifications via Telegram
@@ -46,7 +34,7 @@ See [TELEGRAM_ADS.md](TELEGRAM_ADS.md) for complete Telegram ad system documenta
 
 ### Admin Panel 🛡️
 - **User Management**: View, ban, and unban users
-- **Content Moderation**: Delete inappropriate posts and reels
+- **Content Moderation**: Delete inappropriate posts
 - **Advertisement Management**: Create, edit, and track ads for Telegram bot
 - **Analytics Dashboard**: Platform statistics and insights
 - **Ad Performance Tracking**: Monitor impressions, clicks, and CTR

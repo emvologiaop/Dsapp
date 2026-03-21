@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FriendlyCard } from './FriendlyCard';
 import { Users, FileText, Shield, Search, X, Trash2, Ban, CheckCircle, ArrowLeft, Megaphone, BadgeCheck, Wrench, Clock, XCircle } from 'lucide-react';
 import { AdManagement } from './AdManagement';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface AdminStats {
   stats: {
@@ -109,7 +110,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`/api/admin/stats?userId=${userId}`);
+      const response = await fetch(`/api/admin/stats?userId=${userId}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -125,7 +126,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/admin/users?userId=${userId}&page=${page}&search=${searchQuery}`);
+      const response = await fetch(`/api/admin/users?userId=${userId}&page=${page}&search=${searchQuery}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users);
@@ -141,7 +142,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
   const fetchPosts = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/admin/posts?userId=${userId}&page=${page}`);
+      const response = await fetch(`/api/admin/posts?userId=${userId}&page=${page}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setPosts(data.posts);
@@ -163,7 +164,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/users/${targetUserId}/ban`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, reason: banReason }),
       });
 
@@ -185,7 +186,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/users/${targetUserId}/unban`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
 
@@ -207,7 +208,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/posts/${postId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
 
@@ -226,7 +227,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/posts/${postId}/approval`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, approvalStatus }),
       });
 
@@ -244,7 +245,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
   const fetchVerificationRequests = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/admin/verification-requests?userId=${userId}&page=${verifPage}&status=${verifFilter}`);
+      const response = await fetch(`/api/admin/verification-requests?userId=${userId}&page=${verifPage}&status=${verifFilter}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setVerificationRequests(data.requests);
@@ -261,7 +262,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/users/${targetUserId}/badge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, badgeType: badge, approve }),
       });
       if (response.ok) {
@@ -283,7 +284,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/users/${targetUserId}/badge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, badgeType: 'none', approve: false }),
       });
       if (response.ok) {
@@ -301,7 +302,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
   const fetchMaintenanceSettings = async () => {
     try {
-      const response = await fetch(`/api/admin/maintenance?userId=${userId}`);
+      const response = await fetch(`/api/admin/maintenance?userId=${userId}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setMaintenanceMode(data.maintenanceMode);
@@ -318,7 +319,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
     try {
       const response = await fetch(`/api/admin/maintenance`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId, maintenanceMode, maintenanceMessage }),
       });
       if (response.ok) {
@@ -336,23 +337,26 @@ export function AdminDashboard({ userId, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-background/92 backdrop-blur-2xl">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-md border-b border-border px-6 py-4">
-        <div className="flex items-center justify-between max-w-6xl mx-auto">
+      <div className="sticky top-0 z-10 border-b border-white/30 bg-background/70 px-6 py-4 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between rounded-[28px] border border-white/25 bg-background/60 px-4 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.65)]">
           <div className="flex items-center gap-3">
-            <button onClick={onClose} className="p-2 hover:bg-muted rounded-lg transition-colors">
+            <button onClick={onClose} className="rounded-2xl border border-white/35 bg-background/75 p-2 transition-colors hover:bg-muted">
               <ArrowLeft size={20} />
             </button>
             <Shield size={24} className="text-primary" />
-            <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Control Center</p>
+              <h1 className="text-2xl font-bold tracking-[-0.03em]">Admin Dashboard</h1>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-border bg-background/50 sticky top-[73px] z-10">
-        <div className="flex gap-2 px-6 max-w-6xl mx-auto overflow-x-auto">
+      <div className="sticky top-[97px] z-10 border-b border-white/20 bg-background/45 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-6 py-2">
           {[
             { id: 'stats', label: 'Overview', icon: Shield },
             { id: 'users', label: 'Users', icon: Users },
@@ -367,10 +371,10 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 setActiveTab(tab.id as any);
                 setPage(1);
               }}
-              className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-2 whitespace-nowrap rounded-2xl px-4 py-3 transition-all ${
                 activeTab === tab.id
-                  ? 'border-primary text-primary font-medium'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-[0_16px_35px_-22px_rgba(15,23,42,0.9)]'
+                  : 'border border-white/30 bg-background/70 text-muted-foreground hover:text-foreground'
               }`}
             >
               <tab.icon size={18} />
@@ -381,13 +385,13 @@ export function AdminDashboard({ userId, onClose }: Props) {
       </div>
 
       {/* Content */}
-      <div className="px-6 py-6 max-w-6xl mx-auto">
+      <div className="mx-auto max-w-6xl px-6 py-6">
         {activeTab === 'stats' && stats && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <FriendlyCard className="p-6">
+              <FriendlyCard className="border-white/35 bg-background/80 p-6">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="p-3 bg-blue-500/20 rounded-lg">
+                  <div className="rounded-2xl bg-blue-500/20 p-3">
                     <Users size={24} className="text-blue-500" />
                   </div>
                   <h3 className="text-lg font-bold">Users</h3>
@@ -408,9 +412,9 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 </div>
               </FriendlyCard>
 
-              <FriendlyCard className="p-6">
+              <FriendlyCard className="border-white/35 bg-background/80 p-6">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="p-3 bg-purple-500/20 rounded-lg">
+                  <div className="rounded-2xl bg-purple-500/20 p-3">
                     <FileText size={24} className="text-purple-500" />
                   </div>
                   <h3 className="text-lg font-bold">Posts</h3>
@@ -433,8 +437,8 @@ export function AdminDashboard({ userId, onClose }: Props) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FriendlyCard className="p-6">
-                <h3 className="text-lg font-bold mb-4">Recent Users</h3>
+              <FriendlyCard className="border-white/35 bg-background/80 p-6">
+                <h3 className="mb-4 text-lg font-bold">Recent Users</h3>
                 <div className="space-y-3">
                   {stats.recent.users.map((user: any) => (
                     <div key={user._id} className="flex items-center justify-between">
@@ -450,7 +454,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 </div>
               </FriendlyCard>
 
-              <FriendlyCard className="p-6">
+              <FriendlyCard className="border-white/35 bg-background/80 p-6">
                 <h3 className="text-lg font-bold mb-4">Recent Posts</h3>
                 <div className="space-y-3">
                   {stats.recent.posts.map((post: any) => (
@@ -478,7 +482,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                     setSearchQuery(e.target.value);
                     setPage(1);
                   }}
-                  className="w-full pl-10 pr-4 py-3 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 py-3 pl-10 pr-4 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
             </div>
@@ -488,7 +492,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
             ) : (
               <div className="space-y-3">
                 {users.map((user) => (
-                  <FriendlyCard key={user._id} className="p-4">
+                  <FriendlyCard key={user._id} className="border-white/35 bg-background/80 p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -524,7 +528,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                         {/* Badge management button */}
                         <button
                           onClick={() => { setBadgeUser(user); setBadgeTypeState(user.badgeType || 'none'); }}
-                          className="px-3 py-1.5 bg-yellow-400/10 text-yellow-600 rounded-lg hover:bg-yellow-400/20 transition-colors flex items-center gap-1 text-sm"
+                          className="flex items-center gap-1 rounded-xl bg-yellow-400/10 px-3 py-2 text-sm text-yellow-600 transition-colors hover:bg-yellow-400/20"
                         >
                           <BadgeCheck size={14} />
                           Badge
@@ -534,7 +538,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                             {user.isBanned ? (
                               <button
                                 onClick={() => handleUnbanUser(user._id)}
-                                className="px-4 py-2 bg-green-500/20 text-green-500 rounded-lg hover:bg-green-500/30 transition-colors flex items-center gap-2"
+                                className="flex items-center gap-2 rounded-xl bg-green-500/20 px-4 py-2.5 text-green-500 transition-colors hover:bg-green-500/30"
                               >
                                 <CheckCircle size={16} />
                                 Unban
@@ -542,7 +546,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                             ) : (
                               <button
                                 onClick={() => setSelectedUser(user)}
-                                className="px-4 py-2 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors flex items-center gap-2"
+                                className="flex items-center gap-2 rounded-xl bg-red-500/20 px-4 py-2.5 text-red-500 transition-colors hover:bg-red-500/30"
                               >
                                 <Ban size={16} />
                                 Ban
@@ -563,7 +567,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
+                  className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50"
                 >
                   Previous
                 </button>
@@ -573,7 +577,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
+                  className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50"
                 >
                   Next
                 </button>
@@ -589,7 +593,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
             ) : (
               <div className="space-y-3">
                 {posts.map((post) => (
-                  <FriendlyCard key={post._id} className="p-4">
+                  <FriendlyCard key={post._id} className="border-white/35 bg-background/80 p-4">
                     <div className="flex justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
@@ -635,13 +639,13 @@ export function AdminDashboard({ userId, onClose }: Props) {
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleModeratePost(post._id, 'approved')}
-                              className="px-3 py-2 h-fit bg-green-500/20 text-green-600 rounded-lg hover:bg-green-500/30 transition-colors text-sm font-medium"
+                              className="h-fit rounded-xl bg-green-500/20 px-3 py-2.5 text-sm font-medium text-green-600 transition-colors hover:bg-green-500/30"
                             >
                               Approve
                             </button>
                             <button
                               onClick={() => handleModeratePost(post._id, 'rejected')}
-                              className="px-3 py-2 h-fit bg-amber-500/20 text-amber-600 rounded-lg hover:bg-amber-500/30 transition-colors text-sm font-medium"
+                              className="h-fit rounded-xl bg-amber-500/20 px-3 py-2.5 text-sm font-medium text-amber-600 transition-colors hover:bg-amber-500/30"
                             >
                               Reject
                             </button>
@@ -650,7 +654,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                         {!post.isDeleted && (
                           <button
                             onClick={() => handleDeletePost(post._id)}
-                            className="p-2 h-fit bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors"
+                            className="h-fit rounded-xl bg-red-500/20 p-2.5 text-red-500 transition-colors hover:bg-red-500/30"
                           >
                             <Trash2 size={18} />
                           </button>
@@ -668,7 +672,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
+                  className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50"
                 >
                   Previous
                 </button>
@@ -678,7 +682,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 <button
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
-                  className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50"
+                  className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50"
                 >
                   Next
                 </button>
@@ -702,7 +706,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   <button
                     key={status}
                     onClick={() => { setVerifFilter(status); setVerifPage(1); }}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${verifFilter === status ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                    className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${verifFilter === status ? 'bg-primary text-primary-foreground shadow-[0_12px_30px_-20px_rgba(15,23,42,0.9)]' : 'border border-white/30 bg-background/72 text-muted-foreground hover:bg-muted/80'}`}
                   >
                     {status.charAt(0).toUpperCase() + status.slice(1)}
                   </button>
@@ -717,7 +721,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
             ) : (
               <div className="space-y-4">
                 {verificationRequests.map(req => (
-                  <FriendlyCard key={req._id} className="p-5">
+                  <FriendlyCard key={req._id} className="border-white/35 bg-background/80 p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-4 flex-1 min-w-0">
                         {req.avatarUrl ? (
@@ -751,7 +755,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                       {req.verificationStatus === 'pending' && (
                         <button
                           onClick={() => { setSelectedVerifUser(req); setBadgeToGrant('blue'); }}
-                          className="px-4 py-2 bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors text-sm shrink-0"
+                          className="shrink-0 rounded-xl bg-primary/10 px-4 py-2.5 text-sm text-primary transition-colors hover:bg-primary/20"
                         >
                           Review
                         </button>
@@ -764,9 +768,9 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
             {verifTotalPages > 1 && (
               <div className="flex justify-center gap-2">
-                <button onClick={() => setVerifPage(p => Math.max(1, p - 1))} disabled={verifPage === 1} className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50">Previous</button>
+                <button onClick={() => setVerifPage(p => Math.max(1, p - 1))} disabled={verifPage === 1} className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50">Previous</button>
                 <span className="px-4 py-2">Page {verifPage} of {verifTotalPages}</span>
-                <button onClick={() => setVerifPage(p => Math.min(verifTotalPages, p + 1))} disabled={verifPage === verifTotalPages} className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50">Next</button>
+                <button onClick={() => setVerifPage(p => Math.min(verifTotalPages, p + 1))} disabled={verifPage === verifTotalPages} className="rounded-xl bg-muted px-4 py-2.5 disabled:opacity-50">Next</button>
               </div>
             )}
           </div>
@@ -780,7 +784,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
               <p className="text-sm text-muted-foreground">When enabled, non-admin users see a maintenance screen instead of the app.</p>
             </div>
 
-            <FriendlyCard className="p-6 space-y-5">
+            <FriendlyCard className="space-y-5 border-white/35 bg-background/80 p-6">
               {/* Toggle */}
               <div className="flex items-center justify-between">
                 <div>
@@ -798,7 +802,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
               </div>
 
               {maintenanceMode && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <div className="flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-3">
                   <Wrench size={16} className="text-red-500 shrink-0" />
                   <p className="text-sm text-red-500 font-medium">Maintenance mode is <strong>ACTIVE</strong>. Non-admin users are blocked from the app.</p>
                 </div>
@@ -811,7 +815,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   value={maintenanceMessage}
                   onChange={e => setMaintenanceMessage(e.target.value)}
                   rows={3}
-                  className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                  className="w-full resize-none rounded-2xl border border-white/35 bg-background/80 px-4 py-3 shadow-sm backdrop-blur focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                   placeholder="Enter the message to display to users during maintenance..."
                 />
               </div>
@@ -819,7 +823,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
               <button
                 onClick={handleSaveMaintenanceSettings}
                 disabled={maintenanceSaving}
-                className="w-full px-6 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 py-3 font-semibold text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-all hover:bg-primary/90 disabled:opacity-50"
               >
                 {maintenanceSaving ? (
                   <><span className="animate-spin h-4 w-4 border-2 border-white/30 border-t-white rounded-full" />Saving...</>
@@ -836,11 +840,11 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
       {/* Badge Grant Modal (in Users tab) */}
       {badgeUser && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <FriendlyCard className="max-w-md w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <FriendlyCard className="w-full max-w-md border-white/30 bg-background/88 p-6 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">Manage Badge</h3>
-              <button onClick={() => setBadgeUser(null)} className="p-1 hover:bg-muted rounded"><X size={20} /></button>
+              <button onClick={() => setBadgeUser(null)} className="rounded-full p-1 transition-colors hover:bg-muted"><X size={20} /></button>
             </div>
             <div className="space-y-4">
               <div>
@@ -854,7 +858,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                     <button
                       key={b}
                       onClick={() => setBadgeTypeState(b)}
-                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${badgeType === b ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'}`}
+                      className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${badgeType === b ? 'bg-primary text-primary-foreground border-primary' : 'border-white/35 bg-background/80 text-muted-foreground hover:bg-muted/80'}`}
                     >
                       {b === 'none' ? '✕ None' : b === 'blue' ? '🔵 Blue' : '🟡 Gold'}
                     </button>
@@ -862,10 +866,10 @@ export function AdminDashboard({ userId, onClose }: Props) {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setBadgeUser(null)} className="flex-1 px-4 py-2 bg-muted rounded-lg hover:bg-muted/80 transition-colors">Cancel</button>
+                <button onClick={() => setBadgeUser(null)} className="flex-1 rounded-xl bg-muted px-4 py-2.5 transition-colors hover:bg-muted/80">Cancel</button>
                 <button
                   onClick={() => handleGrantBadge(badgeUser._id, badgeType)}
-                  className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <BadgeCheck size={16} /> Apply Badge
                 </button>
@@ -877,18 +881,18 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
       {/* Verification Review Modal */}
       {selectedVerifUser && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <FriendlyCard className="max-w-lg w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <FriendlyCard className="w-full max-w-lg border-white/30 bg-background/88 p-6 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">Review Verification Request</h3>
-              <button onClick={() => setSelectedVerifUser(null)} className="p-1 hover:bg-muted rounded"><X size={20} /></button>
+              <button onClick={() => setSelectedVerifUser(null)} className="rounded-full p-1 transition-colors hover:bg-muted"><X size={20} /></button>
             </div>
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 {selectedVerifUser.avatarUrl ? (
                   <img src={selectedVerifUser.avatarUrl} alt={selectedVerifUser.name} className="w-14 h-14 rounded-full object-cover" />
                 ) : (
-                  <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center font-bold text-xl">{selectedVerifUser.name?.[0] || 'U'}</div>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[24px] bg-muted font-bold text-xl">{selectedVerifUser.name?.[0] || 'U'}</div>
                 )}
                 <div>
                   <p className="font-bold">{selectedVerifUser.name}</p>
@@ -896,7 +900,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   <p className="text-xs text-muted-foreground">{selectedVerifUser.email}</p>
                 </div>
               </div>
-              <div className="bg-muted rounded-lg p-4 space-y-2">
+              <div className="space-y-2 rounded-2xl border border-white/35 bg-background/76 p-4">
                 <p className="text-sm"><span className="font-semibold">Real Name:</span> {selectedVerifUser.verificationRealName}</p>
                 {selectedVerifUser.verificationNote && <p className="text-sm"><span className="font-semibold">Note:</span> {selectedVerifUser.verificationNote}</p>}
                 {selectedVerifUser.verificationPhotoUrl && (
@@ -905,7 +909,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                     <img
                       src={selectedVerifUser.verificationPhotoUrl}
                       alt="Verification photo"
-                      className="w-full max-h-48 object-cover rounded-lg border border-border"
+                      className="w-full max-h-48 rounded-2xl border border-white/35 object-cover"
                       onError={e => {
                         const img = e.target as HTMLImageElement;
                         img.style.display = 'none';
@@ -913,7 +917,7 @@ export function AdminDashboard({ userId, onClose }: Props) {
                         if (fallback) fallback.style.display = 'flex';
                       }}
                     />
-                    <div style={{ display: 'none' }} className="w-full h-20 rounded-lg border border-border bg-muted items-center justify-center text-sm text-muted-foreground">
+                    <div style={{ display: 'none' }} className="h-20 w-full items-center justify-center rounded-2xl border border-white/35 bg-muted text-sm text-muted-foreground">
                       ⚠️ Photo could not be loaded — please open the link below
                     </div>
                     <a href={selectedVerifUser.verificationPhotoUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline mt-1 block">Open in new tab</a>
@@ -923,10 +927,10 @@ export function AdminDashboard({ userId, onClose }: Props) {
               <div>
                 <label className="block text-sm font-semibold mb-2">Badge to Grant</label>
                 <div className="flex gap-2">
-                  <button onClick={() => setBadgeToGrant('blue')} className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm border transition-colors ${badgeToGrant === 'blue' ? 'bg-blue-500 text-white border-blue-500' : 'bg-muted border-border hover:bg-muted/80'}`}>
+                  <button onClick={() => setBadgeToGrant('blue')} className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${badgeToGrant === 'blue' ? 'border-blue-500 bg-blue-500 text-white' : 'border-white/35 bg-background/80 hover:bg-muted/80'}`}>
                     🔵 Blue Badge
                   </button>
-                  <button onClick={() => setBadgeToGrant('gold')} className={`flex-1 px-4 py-2 rounded-lg font-medium text-sm border transition-colors ${badgeToGrant === 'gold' ? 'bg-yellow-400 text-yellow-950 border-yellow-400' : 'bg-muted border-border hover:bg-muted/80'}`}>
+                  <button onClick={() => setBadgeToGrant('gold')} className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${badgeToGrant === 'gold' ? 'border-yellow-400 bg-yellow-400 text-yellow-950' : 'border-white/35 bg-background/80 hover:bg-muted/80'}`}>
                     🟡 Gold Badge
                   </button>
                 </div>
@@ -935,13 +939,13 @@ export function AdminDashboard({ userId, onClose }: Props) {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleRejectVerification(selectedVerifUser._id)}
-                  className="flex-1 px-4 py-2 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500/30 transition-colors flex items-center justify-center gap-2"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-500/20 px-4 py-2.5 text-red-500 transition-colors hover:bg-red-500/30"
                 >
                   <XCircle size={16} /> Reject
                 </button>
                 <button
                   onClick={() => handleGrantBadge(selectedVerifUser._id, badgeToGrant, true)}
-                  className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center gap-2"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-500 px-4 py-2.5 text-white transition-colors hover:bg-green-600"
                 >
                   <BadgeCheck size={16} /> Approve & Grant Badge
                 </button>
@@ -953,11 +957,11 @@ export function AdminDashboard({ userId, onClose }: Props) {
 
       {/* Ban User Modal */}
       {selectedUser && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <FriendlyCard className="max-w-md w-full p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <FriendlyCard className="w-full max-w-md border-white/30 bg-background/88 p-6 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)]">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">Ban User</h3>
-              <button onClick={() => setSelectedUser(null)} className="p-1 hover:bg-muted rounded">
+              <button onClick={() => setSelectedUser(null)} className="rounded-full p-1 transition-colors hover:bg-muted">
                 <X size={20} />
               </button>
             </div>
@@ -972,20 +976,20 @@ export function AdminDashboard({ userId, onClose }: Props) {
                   value={banReason}
                   onChange={(e) => setBanReason(e.target.value)}
                   placeholder="Enter reason for banning this user..."
-                  className="w-full px-3 py-2 bg-muted border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                  className="w-full resize-none rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                   rows={4}
                 />
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => setSelectedUser(null)}
-                  className="flex-1 px-4 py-2 bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+                  className="flex-1 rounded-xl bg-muted px-4 py-2.5 transition-colors hover:bg-muted/80"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => handleBanUser(selectedUser._id)}
-                  className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                  className="flex-1 rounded-xl bg-red-500 px-4 py-2.5 text-white transition-colors hover:bg-red-600"
                 >
                   Ban User
                 </button>

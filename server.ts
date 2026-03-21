@@ -21,15 +21,24 @@ import { Ad } from './src/models/Ad.js';
 import { Report } from './src/models/Report.js';
 import { Story } from './src/models/Story.js';
 import { SystemSettings } from './src/models/SystemSettings.js';
-import { uploadImage, uploadMultipleImages } from './src/middleware/upload.js';
+import { uploadImage, uploadMultipleImages, uploadStoryMedia } from './src/middleware/upload.js';
 import { processImage } from './src/services/videoProcessor.js';
 import { uploadToR2, generateUniqueFilename } from './src/services/r2Storage.js';
 import { authenticate, requireAdmin, requirePostOwnership } from './src/middleware/auth.js';
 import { extractHashtags, normalizeHashtagQuery } from './src/utils/socialText.js';
 import { rankFeedPosts } from './src/utils/feedRanking.js';
 import { buildUserSuggestions, getMutualFriendIds } from './src/utils/socialGraph.js';
-import { sanitizeSearchQuery } from './src/utils/validation.js';
+import {
+  getPasswordValidationMessage,
+  getSignupValidationErrors,
+  isValidEmail,
+  isValidPassword,
+  isValidUsername,
+  normalizeSignupInput,
+  sanitizeSearchQuery,
+} from './src/utils/validation.js';
 import { getActorRateLimitKey, getRequestOrigin, isOriginAllowed, shouldBypassOriginCheck } from './src/utils/requestSecurity.js';
+import { createAuthToken } from './src/utils/authToken.js';
 
 dotenv.config();
 
@@ -66,6 +75,29 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 
+app.use((req, res, next) => {
+  const isDev = process.env.NODE_ENV !== 'production';
+  const connectSources = ["'self'", ...allowedOrigins, 'https:', 'ws:', 'wss:'];
+  const scriptSources = isDev ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] : ["'self'"];
+  const policy = [
+    "default-src 'self'",
+    `script-src ${scriptSources.join(' ')}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' blob: https:",
+    `connect-src ${connectSources.join(' ')}`,
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+  ].join('; ');
+  res.setHeader('Content-Security-Policy', policy);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -80,6 +112,13 @@ const authLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const identifier = req.body?.email || req.body?.username || req.body?.identifier;
+    if (typeof identifier === 'string' && identifier.trim()) {
+      return `auth:${identifier.trim().toLowerCase()}`;
+    }
+    return `auth:${getActorRateLimitKey(req)}`;
+  },
   message: { error: 'Too many authentication attempts. Please try again later.' },
 });
 
@@ -222,9 +261,22 @@ function formatAuthUser(user: any) {
     name: user.name,
     username: user.username,
     email: user.email,
+    avatarUrl: user.avatarUrl || '',
+    bio: user.bio || '',
+    website: user.website || '',
+    location: user.location || '',
     department: user.department,
     year: user.year,
     role: user.role,
+    createdAt: user.createdAt,
+    isVerified: Boolean(user.isVerified),
+    badgeType: user.badgeType || 'none',
+    verificationStatus: user.verificationStatus || 'none',
+    verificationRealName: user.verificationRealName || '',
+    verificationPhotoUrl: user.verificationPhotoUrl || '',
+    verificationNote: user.verificationNote || '',
+    verificationRequestedAt: user.verificationRequestedAt || null,
+    verificationReviewedAt: user.verificationReviewedAt || null,
     telegramAuthCode: user.telegramAuthCode,
     telegramChatId: user.telegramChatId,
     telegramNotificationsEnabled: user.telegramNotificationsEnabled,
@@ -254,27 +306,62 @@ async function verifyPassword(password: string, stored: string): Promise<boolean
 }
 
 function isStrongEnoughPassword(pw: string): boolean {
-  return typeof pw === 'string' && pw.trim().length >= 6;
+  return isValidPassword(pw);
+}
+
+function normalizeAuthIdentifier(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+async function findUserByAuthIdentifier(identifier: string) {
+  const normalized = normalizeAuthIdentifier(identifier);
+  if (!normalized) return null;
+
+  if (isValidEmail(normalized)) {
+    return User.findOne({ email: normalized });
+  }
+
+  if (isValidUsername(normalized)) {
+    return User.findOne({ username: normalized });
+  }
+
+  return null;
 }
 
 type AuthUserFields = Pick<
   IUser,
-  '_id' | 'name' | 'username' | 'email' | 'department' | 'telegramAuthCode' | 'telegramChatId' | 'telegramNotificationsEnabled' | 'role' | 'createdAt'
+  '_id' |
+  'name' |
+  'username' |
+  'email' |
+  'avatarUrl' |
+  'bio' |
+  'website' |
+  'location' |
+  'department' |
+  'year' |
+  'telegramAuthCode' |
+  'telegramChatId' |
+  'telegramNotificationsEnabled' |
+  'notificationSettings' |
+  'role' |
+  'createdAt' |
+  'isVerified' |
+  'badgeType' |
+  'verificationStatus' |
+  'verificationRealName' |
+  'verificationPhotoUrl' |
+  'verificationNote' |
+  'verificationRequestedAt' |
+  'verificationReviewedAt'
 >;
 
-function serializeAuthUser(user: AuthUserFields) {
-  return {
-    id: user._id.toString(),
-    name: user.name,
-    username: user.username,
-    email: user.email,
-    department: user.department,
-    telegramAuthCode: user.telegramAuthCode,
-    telegramChatId: user.telegramChatId,
-    telegramNotificationsEnabled: user.telegramNotificationsEnabled,
-    role: user.role,
-    createdAt: user.createdAt,
-  };
+async function ensureTelegramAuthCode(user: IUser): Promise<IUser> {
+  if (!user.telegramChatId && !user.telegramAuthCode) {
+    user.telegramAuthCode = crypto.randomInt(100000, 1000000).toString();
+    await user.save();
+  }
+  return user;
 }
 
 // -- Socket.IO -----------------------------------------------------------------
@@ -310,9 +397,10 @@ async function createAndBroadcastDirectMessage(data: {
   tempId?: string;
   req?: any;
 }) {
-  const trimmedText = data.text?.trim();
-  if (!data.senderId || !data.receiverId || !trimmedText) {
-    return { ok: false as const, error: 'Message text is required.' };
+  const trimmedText = typeof data.text === 'string' ? data.text.trim() : '';
+  const hasImage = typeof data.imageUrl === 'string' && data.imageUrl.trim().length > 0;
+  if (!data.senderId || !data.receiverId || (!trimmedText && !hasImage)) {
+    return { ok: false as const, error: 'Message text or image is required.' };
   }
 
   const access = await getMessagingAccess(data.senderId, data.receiverId);
@@ -360,7 +448,7 @@ async function createAndBroadcastDirectMessage(data: {
     receiverUserId: data.receiverId,
     senderUserId: data.senderId,
     messageId: message._id.toString(),
-    textPreview: trimmedText,
+    textPreview: trimmedText || 'Sent you a photo.',
     req: data.req,
   });
 
@@ -519,33 +607,30 @@ app.get('/api/auth/check-username', async (req, res) => {
 
 app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
   try {
-    const { name, username, email, password, age, gender, department, year } = req.body;
-    if (!name || !username || !email || !password || !department || !year) {
-      return res.status(400).json({ error: 'Name, username, email, password, department and year are required' });
+    const { age, gender } = req.body;
+    const normalizedInput = normalizeSignupInput(req.body);
+    const validationErrors = getSignupValidationErrors(normalizedInput);
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ error: validationErrors[0], details: validationErrors });
     }
 
-    // Validate username format (Instagram-like: lowercase, numbers, underscores, periods)
-    const usernameRegex = /^[a-z0-9_.]{3,20}$/;
-    if (!usernameRegex.test(username.toLowerCase())) {
-      return res.status(400).json({ error: 'Username must be 3-20 characters: lowercase letters, numbers, underscores, and periods only' });
-    }
-
-    const existing = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+    const existing = await User.findOne({
+      $or: [{ email: normalizedInput.email }, { username: normalizedInput.username }],
+    });
     if (existing) {
-      if (existing.email === email.toLowerCase()) {
+      if (existing.email === normalizedInput.email) {
         return res.status(409).json({ error: 'Email already in use' });
       }
       return res.status(409).json({ error: 'Username already taken' });
     }
 
-    // Handle avatar upload
     let avatarUrl = '';
     if (req.file) {
       try {
-        const filename = generateUniqueFilename('avatar.webp');
-        avatarUrl = await uploadToR2(req.file.buffer, filename, 'image/webp');
+        avatarUrl = await processImage(req.file.buffer, 'avatar.webp');
       } catch (uploadError) {
         console.error('Avatar upload error:', uploadError);
+        return res.status(500).json({ error: 'Avatar upload failed' });
       }
     }
 
@@ -556,33 +641,22 @@ app.post('/api/auth/signup', uploadImage.single('avatar'), async (req, res) => {
     ]
       .map((e) => e.toLowerCase().trim())
       .filter(Boolean);
-    const isAdminEmail = configuredAdminEmails.includes(email.toLowerCase());
+    const isAdminEmail = configuredAdminEmails.includes(normalizedInput.email);
     const user = await User.create({
-      name,
-      username: username.toLowerCase(),
-      email: email.toLowerCase(),
-      password: await hashPassword(password),
+      name: normalizedInput.name,
+      username: normalizedInput.username,
+      email: normalizedInput.email,
+      password: await hashPassword(normalizedInput.password),
       age: age ? Number(age) : undefined,
       gender,
-      department,
-      year,
+      department: normalizedInput.department,
+      year: normalizedInput.year,
       avatarUrl,
       telegramAuthCode,
       ...(isAdminEmail ? { role: 'admin' } : {}),
     });
-    res.status(201).json({
-      user: {
-        id: user._id.toString(),
-        name: user.name,
-        username: user.username,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-        department: user.department,
-        year: user.year,
-        telegramAuthCode: user.telegramAuthCode,
-        role: user.role,
-      },
-    });
+    const token = createAuthToken({ userId: user._id.toString(), role: user.role });
+    res.status(201).json({ user: formatAuthUser(user), token });
   } catch (error) {
     console.error('POST /api/auth/signup error:', error);
     res.status(500).json({ error: 'Signup failed' });
@@ -595,7 +669,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: 'Enter a valid email address' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -613,8 +691,12 @@ app.post('/api/auth/login', async (req, res) => {
       await user.save();
     }
 
+    await ensureTelegramAuthCode(user);
+
+    const token = createAuthToken({ userId: user._id.toString(), role: user.role });
     res.json({
       user: formatAuthUser(user),
+      token,
     });
   } catch (error) {
     console.error('POST /api/auth/login error:', error);
@@ -625,12 +707,12 @@ app.post('/api/auth/login', async (req, res) => {
 // Forgot password: request a 6-digit reset code
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email || typeof email !== 'string') {
-      return res.status(400).json({ error: 'Email is required' });
+    const identifier = normalizeAuthIdentifier(req.body?.identifier ?? req.body?.email);
+    if (!identifier) {
+      return res.status(400).json({ error: 'Email or username is required' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await findUserByAuthIdentifier(identifier);
     // Always return success to avoid account enumeration
     if (!user) return res.json({ ok: true });
 
@@ -639,12 +721,12 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     user.passwordResetExpiresAt = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
 
-    // If Telegram is connected, send OTP there as well
+    // Recovery is Telegram-first for linked accounts.
     if (user.telegramChatId) {
       try {
         bot?.sendMessage?.(
           Number(user.telegramChatId),
-          `?? DDU Social password reset code: *${code}*\n\nThis code expires in 15 minutes.`,
+          `DDU Social password reset code: *${code}*\n\nThis code expires in 15 minutes.`,
           { parse_mode: 'Markdown' }
         );
       } catch (e) {
@@ -652,7 +734,11 @@ app.post('/api/auth/forgot-password', async (req, res) => {
       }
     }
 
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      delivery: user.telegramChatId ? 'telegram' : 'unavailable',
+      maskedTelegram: user.telegramChatId ? 'linked' : 'not-linked',
+    });
   } catch (error) {
     console.error('POST /api/auth/forgot-password error:', error);
     res.status(500).json({ error: 'Failed to request password reset' });
@@ -662,16 +748,20 @@ app.post('/api/auth/forgot-password', async (req, res) => {
 // Reset password using the 6-digit code
 app.post('/api/auth/reset-password', async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
-    if (!email || typeof email !== 'string') return res.status(400).json({ error: 'Email is required' });
+    const identifier = normalizeAuthIdentifier(req.body?.identifier ?? req.body?.email);
+    const { code, newPassword, confirmPassword } = req.body;
+    if (!identifier) return res.status(400).json({ error: 'Email or username is required' });
     if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       return res.status(400).json({ error: 'Valid 6-digit code is required' });
     }
     if (!isStrongEnoughPassword(newPassword)) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return res.status(400).json({ error: getPasswordValidationMessage() });
+    }
+    if (typeof confirmPassword === 'string' && confirmPassword !== newPassword) {
+      return res.status(400).json({ error: 'Passwords do not match' });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await findUserByAuthIdentifier(identifier);
     if (!user || !user.passwordResetCode || user.passwordResetCode !== code) {
       return res.status(400).json({ error: 'Invalid code' });
     }
@@ -683,6 +773,17 @@ app.post('/api/auth/reset-password', async (req, res) => {
     user.passwordResetCode = undefined;
     user.passwordResetExpiresAt = undefined;
     await user.save();
+
+    if (user.telegramChatId) {
+      try {
+        bot?.sendMessage?.(
+          Number(user.telegramChatId),
+          'Your DDU Social password was changed successfully.'
+        );
+      } catch (e) {
+        // ignore telegram send failures
+      }
+    }
 
     res.json({ ok: true });
   } catch (error) {
@@ -794,6 +895,49 @@ app.get('/api/posts', async (req, res) => {
   }
 });
 
+app.get('/api/posts/:postId', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const viewerId = req.query.userId?.toString();
+    const post = await Post.findOne({
+      _id: postId,
+      isDeleted: { $ne: true },
+      $or: [
+        { approvalStatus: { $exists: false } },
+        { approvalStatus: 'approved' },
+      ],
+    })
+      .select('userId title content mediaUrl mediaUrls likedBy bookmarkedBy commentsCount sharesCount createdAt isAnonymous taggedUsers contentType groupId place eventTime approvalStatus')
+      .populate('userId', 'name username avatarUrl followerIds')
+      .lean();
+
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const postOwner: any = post.userId;
+    const enrichedPost: any = {
+      ...post,
+      userId: postOwner
+        ? {
+            _id: postOwner._id,
+            name: postOwner.name,
+            username: postOwner.username,
+            avatarUrl: postOwner.avatarUrl || '',
+          }
+        : null,
+      likesCount: post.likedBy?.length || 0,
+      isLiked: viewerId ? post.likedBy?.some((id: any) => id.toString() === viewerId) : false,
+      isBookmarked: viewerId ? post.bookmarkedBy?.some((id: any) => id.toString() === viewerId) : false,
+    };
+
+    res.json(enrichedPost);
+  } catch (error) {
+    console.error('GET /api/posts/:postId error:', error);
+    res.status(500).json({ error: 'Failed to fetch post' });
+  }
+});
+
 app.post('/api/posts', async (req, res) => {
   try {
     const { userId, content, isAnonymous, mediaUrl, mediaUrls, taggedUsers, contentType, groupId, title, place, eventTime, creatingGhostPost } = req.body;
@@ -895,6 +1039,38 @@ app.post('/api/posts', async (req, res) => {
   } catch (error) {
     console.error('POST /api/posts error:', error);
     res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.post('/api/images/upload-r2', uploadImage.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    const url = await processImage(req.file.buffer, req.file.originalname || 'chat-image.jpg');
+    res.status(201).json({ url });
+  } catch (error) {
+    console.error('POST /api/images/upload-r2 error:', error);
+    res.status(500).json({ error: 'Image upload failed' });
+  }
+});
+
+app.post('/api/images/upload-multiple-r2', uploadMultipleImages.array('images', 10), async (req, res) => {
+  try {
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: 'No image files provided' });
+    }
+
+    const urls = await Promise.all(
+      files.map((file) => processImage(file.buffer, file.originalname || 'image.jpg'))
+    );
+
+    res.status(201).json({ urls });
+  } catch (error) {
+    console.error('POST /api/images/upload-multiple-r2 error:', error);
+    res.status(500).json({ error: 'Image upload failed' });
   }
 });
 
@@ -1486,10 +1662,15 @@ app.put('/api/users/:userId/profile', async (req, res) => {
     const { userId } = req.params;
     const { name, username, bio, website, location, department } = req.body;
 
-    // Validate username format (Instagram-like)
+    if (name && String(name).trim().length < 2) {
+      return res.status(400).json({ error: 'Full name must be at least 2 characters.' });
+    }
+    if (department && String(department).trim().length < 2) {
+      return res.status(400).json({ error: 'Department must be at least 2 characters.' });
+    }
+
     if (username) {
-      const usernameRegex = /^[a-z0-9_.]{3,20}$/;
-      if (!usernameRegex.test(username.toLowerCase())) {
+      if (!isValidUsername(username.toLowerCase())) {
         return res.status(400).json({ error: 'Username must be 3-20 characters: lowercase letters, numbers, underscores, and periods only' });
       }
 
@@ -1503,29 +1684,19 @@ app.put('/api/users/:userId/profile', async (req, res) => {
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       {
-        name,
+        name: name?.trim(),
         username: username?.toLowerCase(),
         bio,
         website,
         location,
-        department,
+        department: department?.trim(),
       },
       { new: true }
-    ).lean();
+    );
 
     if (!updatedUser) return res.status(404).json({ error: 'User not found' });
 
-    res.json({
-      id: updatedUser._id.toString(),
-      name: updatedUser.name,
-      username: updatedUser.username,
-      avatarUrl: updatedUser.avatarUrl || '',
-      bio: updatedUser.bio || '',
-      website: updatedUser.website || '',
-      location: updatedUser.location || '',
-      department: updatedUser.department || '',
-      isVerified: updatedUser.isVerified || false,
-    });
+    res.json(formatAuthUser(updatedUser));
   } catch (error) {
     console.error('PUT /api/users/:userId/profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
@@ -1545,7 +1716,7 @@ app.put('/api/users/:userId/avatar', uploadImage.single('avatar'), async (req, r
     const user = await User.findByIdAndUpdate(userId, { avatarUrl }, { new: true });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    res.json({ avatarUrl: user.avatarUrl });
+    res.json({ avatarUrl: user.avatarUrl, user: formatAuthUser(user) });
   } catch (error) {
     console.error('PUT /api/users/:userId/avatar error:', error);
     res.status(500).json({ error: 'Failed to upload avatar' });
@@ -1683,7 +1854,7 @@ app.get('/api/messages/:userId/:otherUserId', async (req, res) => {
         { senderId: otherUserId, receiverId: userId },
       ],
     })
-      .select('text senderId receiverId createdAt status isRead reactions')
+      .select('text imageUrl senderId receiverId createdAt status isRead reactions')
       .sort({ createdAt: 1 })
       .lean();
     res.json(messages);
@@ -1876,7 +2047,7 @@ function extractMentions(text: string): string[] {
 async function sendMentionNotifications(
   mentionerUserId: string,
   mentions: string[],
-  contentType: 'post' | 'comment',
+  contentType: 'post' | 'comment' | 'story',
   contentId: string
 ) {
   try {
@@ -1900,7 +2071,8 @@ async function sendMentionNotifications(
       type: 'mention',
       content: `${mentioner.name} mentioned you in a ${contentType}`,
       relatedUserId: mentionerUserId,
-      relatedPostId: contentType !== 'comment' ? contentId : undefined,
+      relatedPostId: contentType === 'post' ? contentId : undefined,
+      relatedStoryId: contentType === 'story' ? contentId : undefined,
     }));
     const createdMentionNotifications = await Notification.insertMany(mentionNotifications);
 
@@ -1945,8 +2117,20 @@ app.get('/api/stories', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const mutualIds = new Set(
+      user.followingIds
+        .filter((id: any) => user.followerIds.some((followerId: any) => followerId.toString() === id.toString()))
+        .map((id: any) => id.toString())
+    );
+
+    const visibleStories = stories.filter((story: any) => {
+      const ownerId = story.userId?._id?.toString?.() || story.userId?.toString?.();
+      if (!ownerId || ownerId === currentUserId) return true;
+      return mutualIds.has(ownerId);
+    });
+
     // Group stories by user
-    const storiesByUser = stories.reduce((acc: any, story: any) => {
+    const storiesByUser = visibleStories.reduce((acc: any, story: any) => {
       const storyOwnerId = story.userId._id.toString();
       if (!acc[storyOwnerId]) {
         acc[storyOwnerId] = {
@@ -1972,9 +2156,9 @@ app.get('/api/stories', async (req, res) => {
 });
 
 // Create a new story
-app.post('/api/stories', uploadImage.single('media'), async (req, res) => {
+app.post('/api/stories', uploadStoryMedia.single('media'), async (req, res) => {
   try {
-    const { userId, caption, mediaType, duration } = req.body;
+    const { userId, caption, mediaType, duration, audience, visualFilter, overlayTexts, drawings, stickers, cameraEffect } = req.body;
 
     if (!userId || !req.file) {
       return res.status(400).json({ error: 'userId and media are required' });
@@ -1984,32 +2168,139 @@ app.post('/api/stories', uploadImage.single('media'), async (req, res) => {
     let mediaUrl: string;
     let thumbnailUrl: string | undefined;
 
-    if (mediaType === 'video') {
-      // For videos, we'd need video processing logic for stories
-      // For now, using a simplified approach
-      const filename = generateUniqueFilename('story-video.mp4');
-      mediaUrl = await uploadToR2(req.file.buffer, filename, 'video/mp4');
-      // Generate thumbnail if needed
+    const normalizedMediaType = req.file.mimetype.startsWith('video/') || mediaType === 'video' ? 'video' : 'image';
+
+    if (normalizedMediaType === 'video') {
+      const originalName = typeof req.file.originalname === 'string' ? req.file.originalname : 'story-video.mp4';
+      const extension = path.extname(originalName).toLowerCase() || '.mp4';
+      const filename = generateUniqueFilename(`story-video${extension}`);
+      const contentType = req.file.mimetype && req.file.mimetype.startsWith('video/')
+        ? req.file.mimetype
+        : 'video/mp4';
+      mediaUrl = await uploadToR2(req.file.buffer, filename, contentType);
     } else {
       // Image
       const filename = generateUniqueFilename('story.jpg');
-      mediaUrl = await uploadToR2(req.file.buffer, filename, 'image/jpeg');
+      mediaUrl = await processImage(req.file.buffer, filename);
     }
 
     // Stories expire after 24 hours
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
+    const normalizedCaption = typeof caption === 'string' ? caption.trim() : '';
+    const mentions = extractMentions(normalizedCaption);
+    let parsedOverlayTexts: Array<{
+      text: string;
+      x: number;
+      y: number;
+      color: string;
+      size: 'sm' | 'md' | 'lg';
+      background: 'none' | 'soft' | 'solid';
+    }> = [];
+    let parsedDrawings: Array<{
+      tool: 'brush' | 'eraser';
+      color: string;
+      size: number;
+      points: Array<{ x: number; y: number }>;
+    }> = [];
+    let parsedStickers: Array<{
+      pack: 'basic' | 'reactions' | 'neon';
+      value: string;
+      x: number;
+      y: number;
+      scale: number;
+      rotation: number;
+    }> = [];
+
+    if (typeof overlayTexts === 'string' && overlayTexts.trim()) {
+      try {
+        const candidate = JSON.parse(overlayTexts);
+        if (Array.isArray(candidate)) {
+          parsedOverlayTexts = candidate
+            .filter((item) => typeof item?.text === 'string' && item.text.trim())
+            .slice(0, 5)
+            .map((item) => ({
+              text: item.text.trim().slice(0, 80),
+              x: Math.max(0, Math.min(100, Number(item.x) || 50)),
+              y: Math.max(0, Math.min(100, Number(item.y) || 50)),
+              color: typeof item.color === 'string' ? item.color.slice(0, 24) : '#ffffff',
+              size: item.size === 'sm' || item.size === 'lg' ? item.size : 'md',
+              background: item.background === 'none' || item.background === 'solid' ? item.background : 'soft',
+            }));
+        }
+      } catch (error) {
+        return res.status(400).json({ error: 'overlayTexts is invalid' });
+      }
+    }
+
+    if (typeof drawings === 'string' && drawings.trim()) {
+      try {
+        const candidate = JSON.parse(drawings);
+        if (Array.isArray(candidate)) {
+          parsedDrawings = candidate
+            .filter((item) => Array.isArray(item?.points) && item.points.length > 1)
+            .slice(0, 30)
+            .map((item) => ({
+              tool: (item.tool === 'eraser' ? 'eraser' : 'brush') as 'brush' | 'eraser',
+              color: typeof item.color === 'string' ? item.color.slice(0, 24) : '#ffffff',
+              size: Math.max(1, Math.min(24, Number(item.size) || 4)),
+              points: item.points
+                .slice(0, 500)
+                .map((point: any) => ({
+                  x: Math.max(0, Math.min(100, Number(point?.x) || 0)),
+                  y: Math.max(0, Math.min(100, Number(point?.y) || 0)),
+                })),
+            }))
+            .filter((path) => path.points.length > 1);
+        }
+      } catch (error) {
+        return res.status(400).json({ error: 'drawings is invalid' });
+      }
+    }
+
+    if (typeof stickers === 'string' && stickers.trim()) {
+      try {
+        const candidate = JSON.parse(stickers);
+        if (Array.isArray(candidate)) {
+          parsedStickers = candidate
+            .filter((item) => typeof item?.value === 'string' && item.value.trim())
+            .slice(0, 25)
+            .map((item) => ({
+              pack: item.pack === 'reactions' || item.pack === 'neon' ? item.pack : 'basic',
+              value: item.value.trim().slice(0, 10),
+              x: Math.max(0, Math.min(100, Number(item.x) || 50)),
+              y: Math.max(0, Math.min(100, Number(item.y) || 50)),
+              scale: Math.max(0.6, Math.min(2.5, Number(item.scale) || 1)),
+              rotation: Math.max(-180, Math.min(180, Number(item.rotation) || 0)),
+            }));
+        }
+      } catch (error) {
+        return res.status(400).json({ error: 'stickers is invalid' });
+      }
+    }
+
     const story = await Story.create({
       userId,
+      drawings: parsedDrawings,
+      stickers: parsedStickers,
+      cameraEffect: cameraEffect === 'vintage' || cameraEffect === 'cool' || cameraEffect === 'vivid' || cameraEffect === 'mono' ? cameraEffect : 'none',
+      overlayTexts: parsedOverlayTexts,
+      visualFilter: visualFilter === 'warm' || visualFilter === 'mono' || visualFilter === 'dream' || visualFilter === 'boost' ? visualFilter : 'none',
       mediaUrl,
-      mediaType: mediaType || 'image',
+      mediaType: normalizedMediaType,
+      audience: 'mutuals',
       thumbnailUrl,
-      caption,
-      duration: mediaType === 'video' ? parseInt(duration) : undefined,
+      caption: normalizedCaption,
+      mentions,
+      duration: normalizedMediaType === 'video' ? parseInt(duration) : undefined,
       expiresAt,
       views: [],
       isActive: true
     });
+
+    if (mentions.length > 0) {
+      await sendMentionNotifications(userId, mentions, 'story', story._id.toString());
+    }
 
     const populated = await Story.findById(story._id)
       .populate('userId', 'name username avatarUrl')
@@ -2069,6 +2360,39 @@ app.post('/api/stories/:storyId/view', async (req, res) => {
   }
 });
 
+app.get('/api/stories/:storyId/viewers', async (req, res) => {
+  try {
+    const { storyId } = req.params;
+    const userId = req.query.userId?.toString();
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const story = await Story.findById(storyId).select('userId views').lean();
+    if (!story) {
+      return res.status(404).json({ error: 'Story not found' });
+    }
+
+    if (story.userId.toString() !== userId) {
+      return res.status(403).json({ error: 'Only the story owner can view story analytics' });
+    }
+
+    const viewers = await User.find({ _id: { $in: story.views || [] } })
+      .select('name username avatarUrl')
+      .lean();
+
+    const orderedViewers = (story.views || [])
+      .map((viewerId) => viewers.find((viewer) => viewer._id.toString() === viewerId.toString()))
+      .filter(Boolean);
+
+    res.json({ viewers: orderedViewers, total: orderedViewers.length });
+  } catch (error) {
+    console.error('GET /api/stories/:storyId/viewers error:', error);
+    res.status(500).json({ error: 'Failed to fetch story viewers' });
+  }
+});
+
 // Delete a story
 app.delete('/api/stories/:storyId', async (req, res) => {
   try {
@@ -2099,7 +2423,13 @@ app.delete('/api/stories/:storyId', async (req, res) => {
 app.get('/api/stories/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    const currentUserId = req.query.currentUserId?.toString();
     const now = new Date();
+
+    const profileUser = await User.findById(userId).select('followingIds followerIds').lean();
+    if (!profileUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
     const stories = await Story.find({
       userId,
@@ -2110,7 +2440,18 @@ app.get('/api/stories/user/:userId', async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json(stories);
+    const isOwnProfile = currentUserId === userId;
+    const isMutual = currentUserId
+      ? profileUser.followerIds.some((id: any) => id.toString() === currentUserId) &&
+        profileUser.followingIds.some((id: any) => id.toString() === currentUserId)
+      : false;
+
+    const visibleStories = stories.filter((story: any) => {
+      if (isOwnProfile) return true;
+      return Boolean(currentUserId && isMutual);
+    });
+
+    res.json(visibleStories);
   } catch (error) {
     console.error('GET /api/stories/user/:userId error:', error);
     res.status(500).json({ error: 'Failed to fetch user stories' });

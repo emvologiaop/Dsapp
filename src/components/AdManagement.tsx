@@ -5,6 +5,7 @@ import {
   TrendingUp, MousePointerClick, Eye, X,
   Calendar, Link as LinkIcon, Image as ImageIcon
 } from 'lucide-react';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface Ad {
   _id: string;
@@ -67,7 +68,7 @@ export function AdManagement({ userId }: Props) {
     setLoading(true);
     try {
       const filterParam = filterActive !== undefined ? `&isActive=${filterActive}` : '';
-      const response = await fetch(`/api/admin/ads?userId=${userId}&page=${page}${filterParam}`);
+      const response = await fetch(`/api/admin/ads?userId=${userId}&page=${page}${filterParam}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setAds(data.ads);
@@ -85,7 +86,7 @@ export function AdManagement({ userId }: Props) {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`/api/admin/ads/stats/summary?userId=${userId}`);
+      const response = await fetch(`/api/admin/ads/stats/summary?userId=${userId}`, { headers: withAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         setStats(data);
@@ -112,7 +113,7 @@ export function AdManagement({ userId }: Props) {
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(formData),
       });
 
@@ -155,7 +156,7 @@ export function AdManagement({ userId }: Props) {
     try {
       const response = await fetch(`/api/admin/ads/${adId}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
 
@@ -175,7 +176,7 @@ export function AdManagement({ userId }: Props) {
     try {
       const response = await fetch(`/api/admin/ads/${ad._id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ isActive: !ad.isActive }),
       });
 
@@ -211,13 +212,13 @@ export function AdManagement({ userId }: Props) {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-6">
+    <div className="mx-auto max-w-6xl px-6 py-6">
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <FriendlyCard className="p-4">
+          <FriendlyCard className="border-white/35 bg-background/80 p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
+              <div className="rounded-2xl bg-primary/10 p-2">
                 <TrendingUp className="text-primary" size={20} />
               </div>
               <div>
@@ -230,9 +231,9 @@ export function AdManagement({ userId }: Props) {
             </div>
           </FriendlyCard>
 
-          <FriendlyCard className="p-4">
+          <FriendlyCard className="border-white/35 bg-background/80 p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
+              <div className="rounded-2xl bg-blue-500/10 p-2">
                 <Eye className="text-blue-500" size={20} />
               </div>
               <div>
@@ -243,9 +244,9 @@ export function AdManagement({ userId }: Props) {
             </div>
           </FriendlyCard>
 
-          <FriendlyCard className="p-4">
+          <FriendlyCard className="border-white/35 bg-background/80 p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
+              <div className="rounded-2xl bg-green-500/10 p-2">
                 <MousePointerClick className="text-green-500" size={20} />
               </div>
               <div>
@@ -268,7 +269,7 @@ export function AdManagement({ userId }: Props) {
         </div>
         <button
           onClick={() => setShowCreateForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+          className="flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-colors hover:bg-primary/90"
         >
           <Plus size={18} />
           Create Ad
@@ -279,30 +280,30 @@ export function AdManagement({ userId }: Props) {
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => setFilterActive(undefined)}
-          className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+          className={`rounded-xl px-3 py-1.5 text-sm transition-colors ${
             filterActive === undefined
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              : 'border border-white/35 bg-background/76 text-muted-foreground hover:bg-muted/80'
           }`}
         >
           All Ads
         </button>
         <button
           onClick={() => setFilterActive(true)}
-          className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+          className={`rounded-xl px-3 py-1.5 text-sm transition-colors ${
             filterActive === true
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              : 'border border-white/35 bg-background/76 text-muted-foreground hover:bg-muted/80'
           }`}
         >
           Active
         </button>
         <button
           onClick={() => setFilterActive(false)}
-          className={`px-3 py-1 rounded-lg text-sm transition-colors ${
+          className={`rounded-xl px-3 py-1.5 text-sm transition-colors ${
             filterActive === false
               ? 'bg-primary text-primary-foreground'
-              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              : 'border border-white/35 bg-background/76 text-muted-foreground hover:bg-muted/80'
           }`}
         >
           Inactive
@@ -311,12 +312,12 @@ export function AdManagement({ userId }: Props) {
 
       {/* Create/Edit Form */}
       {showCreateForm && (
-        <FriendlyCard className="p-6 mb-6">
+        <FriendlyCard className="mb-6 border-white/35 bg-background/82 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">
               {editingAd ? 'Edit Advertisement' : 'Create New Advertisement'}
             </h3>
-            <button onClick={handleCancel} className="p-2 hover:bg-muted rounded-lg">
+            <button onClick={handleCancel} className="rounded-2xl p-2 transition-colors hover:bg-muted">
               <X size={20} />
             </button>
           </div>
@@ -328,7 +329,7 @@ export function AdManagement({ userId }: Props) {
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Ad title (max 100 characters)"
                 maxLength={100}
                 required
@@ -340,7 +341,7 @@ export function AdManagement({ userId }: Props) {
               <textarea
                 value={formData.content}
                 onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Ad content (max 500 characters)"
                 rows={4}
                 maxLength={500}
@@ -361,7 +362,7 @@ export function AdManagement({ userId }: Props) {
                   type="url"
                   value={formData.imageUrl}
                   onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="https://example.com/image.jpg"
                 />
               </div>
@@ -375,7 +376,7 @@ export function AdManagement({ userId }: Props) {
                   type="url"
                   value={formData.linkUrl}
                   onChange={(e) => setFormData({ ...formData, linkUrl: e.target.value })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="https://example.com"
                 />
               </div>
@@ -391,7 +392,7 @@ export function AdManagement({ userId }: Props) {
                   type="date"
                   value={formData.startDate}
                   onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -404,7 +405,7 @@ export function AdManagement({ userId }: Props) {
                   type="date"
                   value={formData.endDate}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -413,7 +414,7 @@ export function AdManagement({ userId }: Props) {
                 <select
                   value={formData.targetAudience}
                   onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full rounded-2xl border border-white/35 bg-background/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="all">All Users</option>
                   <option value="verified">Verified Only</option>
@@ -439,13 +440,13 @@ export function AdManagement({ userId }: Props) {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors"
+                className="rounded-xl bg-muted px-4 py-2.5 text-foreground transition-colors hover:bg-muted/80"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                className="rounded-xl bg-primary px-4 py-2.5 text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 {editingAd ? 'Update Ad' : 'Create Ad'}
               </button>
@@ -460,13 +461,13 @@ export function AdManagement({ userId }: Props) {
           <p className="text-muted-foreground">Loading ads...</p>
         </div>
       ) : ads.length === 0 ? (
-        <FriendlyCard className="p-12 text-center">
+        <FriendlyCard className="border-white/35 bg-background/80 p-12 text-center">
           <p className="text-muted-foreground">No ads found. Create your first ad to get started.</p>
         </FriendlyCard>
       ) : (
         <div className="space-y-4">
           {ads.map((ad) => (
-            <FriendlyCard key={ad._id} className="p-6">
+            <FriendlyCard key={ad._id} className="border-white/35 bg-background/80 p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
@@ -543,7 +544,7 @@ export function AdManagement({ userId }: Props) {
                 <div className="flex gap-2">
                   <button
                     onClick={() => toggleActive(ad)}
-                    className={`p-2 rounded-lg transition-colors ${
+                    className={`rounded-xl p-2.5 transition-colors ${
                       ad.isActive
                         ? 'hover:bg-red-500/10 text-red-500'
                         : 'hover:bg-green-500/10 text-green-500'
@@ -554,14 +555,14 @@ export function AdManagement({ userId }: Props) {
                   </button>
                   <button
                     onClick={() => handleEdit(ad)}
-                    className="p-2 hover:bg-blue-500/10 text-blue-500 rounded-lg transition-colors"
+                    className="rounded-xl p-2.5 text-blue-500 transition-colors hover:bg-blue-500/10"
                     title="Edit"
                   >
                     <Edit2 size={18} />
                   </button>
                   <button
                     onClick={() => handleDelete(ad._id)}
-                    className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
+                    className="rounded-xl p-2.5 text-red-500 transition-colors hover:bg-red-500/10"
                     title="Delete"
                   >
                     <Trash2 size={18} />
@@ -579,7 +580,7 @@ export function AdManagement({ userId }: Props) {
           <button
             onClick={() => setPage(Math.max(1, page - 1))}
             disabled={page === 1}
-            className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50 hover:bg-muted/80 transition-colors"
+            className="rounded-xl bg-muted px-4 py-2.5 transition-colors hover:bg-muted/80 disabled:opacity-50"
           >
             Previous
           </button>
@@ -589,7 +590,7 @@ export function AdManagement({ userId }: Props) {
           <button
             onClick={() => setPage(Math.min(totalPages, page + 1))}
             disabled={page === totalPages}
-            className="px-4 py-2 bg-muted rounded-lg disabled:opacity-50 hover:bg-muted/80 transition-colors"
+            className="rounded-xl bg-muted px-4 py-2.5 transition-colors hover:bg-muted/80 disabled:opacity-50"
           >
             Next
           </button>

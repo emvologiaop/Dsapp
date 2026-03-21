@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Heart, MessageCircle, Share2, Bookmark } from 'lucide-react';
 import { ShareModal } from './ShareModal';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface PostActionsProps {
   postId: string;
@@ -36,7 +37,7 @@ export function PostActions({
     try {
       await fetch(`/api/posts/${postId}/like`, {
         method: newLiked ? 'POST' : 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
     } catch (err) {
@@ -51,7 +52,7 @@ export function PostActions({
     try {
       await fetch(`/api/posts/${postId}/bookmark`, {
         method: newBookmarked ? 'POST' : 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId }),
       });
     } catch (err) {
@@ -60,10 +61,10 @@ export function PostActions({
   };
 
   return (
-    <div className="flex items-center gap-4 mt-2">
+    <div className="mt-3 flex items-center gap-2">
       <button
         onClick={handleLike}
-        className={`flex items-center gap-1 text-sm transition-colors ${liked ? 'text-red-500' : 'text-muted-foreground hover:text-red-500'}`}
+        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-medium transition-all duration-300 ${liked ? 'border-red-500/20 bg-red-500/10 text-red-500 shadow-[0_16px_35px_-24px_rgba(239,68,68,0.75)]' : 'border-border/70 bg-background/80 text-muted-foreground hover:-translate-y-0.5 hover:text-red-500'}`}
         aria-label={liked ? 'Unlike' : 'Like'}
       >
         <Heart className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} />
@@ -72,7 +73,7 @@ export function PostActions({
 
       <button
         onClick={onComment}
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-300 hover:-translate-y-0.5 hover:text-primary"
         aria-label="Comment"
       >
         <MessageCircle className="w-5 h-5" />
@@ -81,7 +82,7 @@ export function PostActions({
 
       <button
         onClick={() => setShareModalOpen(true)}
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
+        className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-background/80 px-3 py-2 text-sm font-medium text-muted-foreground transition-all duration-300 hover:-translate-y-0.5 hover:text-primary"
         aria-label="Share"
       >
         <Share2 className="w-5 h-5" />
@@ -90,7 +91,7 @@ export function PostActions({
 
       <button
         onClick={handleBookmark}
-        className={`ml-auto flex items-center gap-1 text-sm transition-colors ${bookmarked ? 'text-yellow-500' : 'text-muted-foreground hover:text-yellow-500'}`}
+        className={`ml-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-medium transition-all duration-300 ${bookmarked ? 'border-yellow-500/20 bg-yellow-500/10 text-yellow-500 shadow-[0_16px_35px_-24px_rgba(234,179,8,0.75)]' : 'border-border/70 bg-background/80 text-muted-foreground hover:-translate-y-0.5 hover:text-yellow-500'}`}
         aria-label={bookmarked ? 'Remove bookmark' : 'Bookmark'}
       >
         <Bookmark className={`w-5 h-5 ${bookmarked ? 'fill-current' : ''}`} />

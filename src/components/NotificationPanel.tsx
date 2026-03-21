@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Bell, Heart, MessageCircle, UserPlus, CheckCheck } from 'lucide-react';
 import { FriendlyCard } from './FriendlyCard';
 import socket from '../services/socket';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface Notification {
   id: string;
@@ -77,7 +78,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
 
   const markAsRead = async (id: string) => {
     try {
-      await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
+      await fetch(`/api/notifications/${id}/read`, { method: 'POST', headers: withAuthHeaders() });
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
       window.dispatchEvent(new CustomEvent('social:notifications-read', { detail: { ids: [id] } }));
     } catch (error) {
@@ -88,7 +89,7 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
   const markAllAsRead = async () => {
     try {
       const unread = notifications.filter(n => !n.isRead);
-      await Promise.all(unread.map(n => fetch(`/api/notifications/${n.id}/read`, { method: 'POST' })));
+      await Promise.all(unread.map(n => fetch(`/api/notifications/${n.id}/read`, { method: 'POST', headers: withAuthHeaders() })));
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       window.dispatchEvent(new CustomEvent('social:notifications-read', { detail: { ids: unread.map((n) => n.id), all: true } }));
     } catch (error) {
@@ -97,25 +98,31 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex flex-col">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-        <h2 className="text-lg font-bold">Notifications</h2>
+    <div className="fixed inset-0 z-50 flex flex-col bg-background/85 backdrop-blur-2xl">
+      <div className="border-b border-white/30 bg-background/60 px-6 py-4 backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-2xl items-center justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Activity</p>
+          <h2 className="text-xl font-bold tracking-[-0.03em]">Notifications</h2>
+        </div>
         <div className="flex items-center gap-2">
           {notifications.some(n => !n.isRead) && (
             <button
               onClick={markAllAsRead}
-              className="p-2 rounded-full text-primary hover:bg-muted transition-colors"
+              className="rounded-full border border-border/70 bg-background/80 p-2 text-primary transition-colors hover:bg-muted"
               title="Mark all as read"
             >
               <CheckCheck size={18} />
             </button>
           )}
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
+          <button onClick={onClose} className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted">
             <X size={20} />
           </button>
         </div>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-2xl flex-1 overflow-y-auto px-4 py-5 md:px-6">
+        <div className="w-full">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -126,16 +133,17 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
             <p className="text-sm">No notifications yet</p>
           </div>
         ) : (
-          notifications.map(n => (
-            <div
+          <div className="space-y-3">
+          {notifications.map(n => (
+            <FriendlyCard
               key={n.id}
-              className={`flex items-center gap-3 px-6 py-3 border-b border-border/50 cursor-pointer transition-colors hover:bg-muted/50 ${!n.isRead ? 'bg-primary/5' : ''}`}
+              className={`flex cursor-pointer items-center gap-3 border px-4 py-4 transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted/40 ${!n.isRead ? 'border-primary/15 bg-primary/5 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.65)]' : 'border-white/35 bg-background/80'}`}
               onClick={async () => {
                 if (!n.isRead) await markAsRead(n.id);
                 onNavigate?.(n);
               }}
             >
-              <div className="shrink-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/40 bg-background/80 shadow-sm">
                 {getNotificationIcon(n.type)}
               </div>
               <div className="flex-1 min-w-0">
@@ -143,9 +151,11 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ userId, on
                 <p className="text-xs text-muted-foreground mt-0.5">{getTimeAgo(n.createdAt)}</p>
               </div>
               {!n.isRead && <div className="w-2 h-2 bg-primary rounded-full shrink-0" />}
-            </div>
-          ))
+            </FriendlyCard>
+          ))}
+          </div>
         )}
+      </div>
       </div>
     </div>
   );

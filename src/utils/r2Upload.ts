@@ -1,3 +1,5 @@
+import { withAuthHeaders } from './clientAuth';
+
 export type UploadProgress = {
   percentage: number;
 };
@@ -29,7 +31,7 @@ export async function uploadMultipleImagesToR2(files: File[], onProgress?: (p: U
 
   // NOTE: fetch doesn't expose upload progress; we simulate progress for UX.
   onProgress?.({ percentage: 10 });
-  const res = await fetch('/api/images/upload-multiple-r2', { method: 'POST', body: form });
+  const res = await fetch('/api/images/upload-multiple-r2', { method: 'POST', headers: withAuthHeaders(), body: form });
   onProgress?.({ percentage: 70 });
 
   if (!res.ok) {

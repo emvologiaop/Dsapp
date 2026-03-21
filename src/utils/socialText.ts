@@ -15,3 +15,7 @@ export function extractMentions(text: string): string[] {
   const matches = (text || '').match(/@([\w.]+)/g) || [];
   return [...new Set(matches.map((mention) => mention.slice(1).toLowerCase()))];
 }
+
+export function splitTextWithSocialTokens(text: string): string[] {
+  return (text || '').split(/([#@][\p{L}\p{N}_.-]+)/gu).filter(Boolean);
+}

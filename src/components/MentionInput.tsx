@@ -175,9 +175,9 @@ export const MentionInput: React.FC<MentionInputProps> = ({
         rows={rows}
         disabled={disabled}
         className={cn(
-          'w-full px-3 py-2 border border-border rounded-lg resize-none',
+          'w-full resize-none rounded-2xl border border-white/35 bg-background/80 px-4 py-3',
           'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary',
-          'bg-background text-foreground',
+          'text-foreground shadow-sm backdrop-blur',
           'disabled:opacity-50 disabled:cursor-not-allowed',
           textareaClassName
         )}
@@ -191,7 +191,7 @@ export const MentionInput: React.FC<MentionInputProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             style={getDropdownPosition()}
-            className="absolute bg-background border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto z-50 w-full"
+            className="absolute z-50 max-h-64 w-full overflow-y-auto rounded-2xl border border-white/35 bg-background/92 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.85)] backdrop-blur-xl"
           >
             {isSearching ? (
               <div className="flex items-center justify-center p-4">
@@ -205,11 +205,11 @@ export const MentionInput: React.FC<MentionInputProps> = ({
                     onClick={() => insertMention(user)}
                     onMouseEnter={() => setSelectedIndex(index)}
                     className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2 transition-colors text-left',
-                      selectedIndex === index ? 'bg-muted' : 'hover:bg-muted'
+                      'flex w-full items-center gap-3 px-3 py-3 text-left transition-colors',
+                      selectedIndex === index ? 'bg-muted/80' : 'hover:bg-muted/60'
                     )}
                   >
-                    <div className="w-8 h-8 rounded-full bg-muted overflow-hidden flex-shrink-0">
+                    <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-2xl bg-muted">
                       {user.avatarUrl ? (
                         <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
                       ) : (

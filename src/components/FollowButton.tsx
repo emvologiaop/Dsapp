@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus, UserCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { withAuthHeaders } from '../utils/clientAuth';
 
 interface FollowButtonProps {
   userId: string;
@@ -24,7 +25,7 @@ export const FollowButton: React.FC<FollowButtonProps> = ({ userId, targetId, in
       const method = isFollowing ? 'DELETE' : 'POST';
       const response = await fetch(`/api/users/${targetId}/follow`, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId })
       });
       

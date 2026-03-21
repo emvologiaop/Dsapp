@@ -34,7 +34,7 @@ const MessageSchema = new Schema<IMessage>(
   {
     senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     receiverId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    text: { type: String, required: true },
+    text: { type: String, default: '' },
     imageUrl: { type: String },
     isRead: { type: Boolean, default: false },
     readAt: { type: Date },

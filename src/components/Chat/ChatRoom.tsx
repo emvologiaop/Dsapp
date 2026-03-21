@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Image as ImageIcon, Send } from 'lucide-react';
+import { ArrowLeft, Image as ImageIcon, Loader2, Send, X } from 'lucide-react';
 import { FriendlyCard } from '../FriendlyCard';
 import socket from '../../services/socket';
 import { cn } from '../../lib/utils';
+import { compressImage } from '../../utils/r2Upload';
+import { withAuthHeaders } from '../../utils/clientAuth';
 
 type UserLite = {
   id: string;
@@ -37,8 +39,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
   const [loadError, setLoadError] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [canMessage, setCanMessage] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const focusMessageIdRef = useRef<string | undefined>(focusMessageId);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     focusMessageIdRef.current = focusMessageId;
@@ -54,6 +59,22 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   };
+
+  const clearSelectedImage = (options?: { revokePreview?: boolean }) => {
+    if (options?.revokePreview !== false && selectedImagePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(selectedImagePreview);
+    }
+    setSelectedImage(null);
+    setSelectedImagePreview(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (selectedImagePreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedImagePreview);
+      }
+    };
+  }, [selectedImagePreview]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -116,7 +137,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
       try {
         await fetch('/api/messages/read', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ userId: currentUserId, otherUserId }),
         });
       } catch (e) {
@@ -194,34 +215,56 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
   const sendMessage = async () => {
     if (!currentUserId || !otherUserId) return;
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed && !selectedImage) return;
     if (sending) return;
     if (!canMessage) return;
 
     setSending(true);
     setComposerError(null);
     const tempId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const queuedImage = selectedImage;
+    const queuedPreview = selectedImagePreview;
     const optimistic: Message = {
       _id: tempId,
       tempId,
       senderId: currentUserId,
       receiverId: otherUserId,
       text: trimmed,
+      imageUrl: queuedPreview || undefined,
       createdAt: new Date().toISOString(),
       status: 'sent',
     };
     setMessages((prev) => [...prev, optimistic]);
     setText('');
+    setSelectedImage(null);
+    setSelectedImagePreview(null);
     queueMicrotask(scrollToBottom);
 
     try {
+      let uploadedImageUrl: string | undefined;
+      if (queuedImage) {
+        const form = new FormData();
+        form.append('image', queuedImage);
+        const uploadResponse = await fetch('/api/images/upload-r2', {
+          method: 'POST',
+          headers: withAuthHeaders(),
+          body: form,
+        });
+        const uploadData = await uploadResponse.json().catch(() => null);
+        if (!uploadResponse.ok || !uploadData?.url) {
+          throw new Error(uploadData?.error || 'Failed to upload image');
+        }
+        uploadedImageUrl = uploadData.url;
+      }
+
       const res = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           senderId: currentUserId,
           receiverId: otherUserId,
           text: trimmed,
+          imageUrl: uploadedImageUrl,
           tempId,
         }),
       });
@@ -232,25 +275,63 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
       }
 
       if (data?.message) {
+        if (queuedPreview?.startsWith('blob:')) {
+          URL.revokeObjectURL(queuedPreview);
+        }
         setMessages((prev) => prev.map((message) => (
           message.tempId === tempId ? { ...data.message, tempId: undefined } : message
         )));
       }
     } catch (e) {
       setMessages((prev) => prev.filter((m) => m.tempId !== tempId));
+      setText(trimmed);
+      if (queuedImage) {
+        setSelectedImage(queuedImage);
+        setSelectedImagePreview(queuedPreview || null);
+      }
       setComposerError(e instanceof Error ? e.message : 'Failed to send message');
     } finally {
       setSending(false);
     }
   };
 
+  const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setComposerError('Only image attachments are supported.');
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setComposerError('Images must be 10MB or smaller.');
+      return;
+    }
+
+    try {
+      const compressed = await compressImage(file, 1600, 1600, 0.82);
+      if (selectedImagePreview?.startsWith('blob:')) {
+        URL.revokeObjectURL(selectedImagePreview);
+      }
+      setSelectedImage(compressed);
+      setSelectedImagePreview(URL.createObjectURL(compressed));
+      setComposerError(null);
+    } catch (error) {
+      console.error('Failed to prepare chat image:', error);
+      setComposerError('Failed to prepare the image. Please choose another file.');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3 flex items-center gap-3">
+    <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <header className="sticky top-0 z-40 border-b border-white/30 bg-background/70 px-4 py-3 backdrop-blur-2xl">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-3 rounded-[24px] border border-white/25 bg-background/65 px-3 py-2 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.65)]">
         <button
           type="button"
           onClick={onBack}
-          className="p-2 rounded-full hover:bg-muted transition-colors"
+          className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted"
           aria-label="Back"
         >
           <ArrowLeft size={20} />
@@ -260,7 +341,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
           onClick={() => onViewProfile?.(otherUserId)}
           className="flex items-center gap-3 min-w-0 text-left"
         >
-          <div className="h-10 w-10 rounded-full overflow-hidden bg-muted flex items-center justify-center font-bold text-foreground">
+          <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-muted font-bold text-foreground ring-1 ring-white/40">
             {otherUser?.avatarUrl ? (
               <img src={otherUser.avatarUrl} alt={title} className="h-full w-full object-cover" />
             ) : (
@@ -273,9 +354,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
           </div>
         </button>
         <div className="flex-1 min-w-0" />
+        </div>
       </header>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+      <div ref={listRef} className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 overflow-y-auto px-4 py-5">
         {loadError && (
           <FriendlyCard className="border border-red-500/20 bg-red-500/10 text-sm text-red-600 dark:text-red-300">
             {loadError}
@@ -289,16 +371,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
             <div id={`msg_${m._id}`} key={m._id} className={cn('flex', isMine ? 'justify-end' : 'justify-start')}>
               <div
                 className={cn(
-                  'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm shadow-sm border',
+                  'max-w-[85%] rounded-[24px] border px-4 py-3 text-sm shadow-[0_18px_45px_-30px_rgba(15,23,42,0.75)] backdrop-blur',
                   isMine
-                    ? 'bg-primary text-primary-foreground border-primary/20'
-                    : 'bg-muted text-foreground border-border'
+                    ? 'border-primary/20 bg-primary text-primary-foreground'
+                    : 'border-white/40 bg-background/82 text-foreground'
                 )}
               >
                 {m.imageUrl && (
                   <img src={m.imageUrl} alt="" className="w-full max-w-sm rounded-xl mb-2 object-cover" />
                 )}
-                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                {m.text ? <p className="whitespace-pre-wrap break-words">{m.text}</p> : null}
                 <div className={cn('mt-1 flex items-center gap-2 text-[10px] opacity-80', isMine ? 'text-primary-foreground/80' : 'text-muted-foreground')}>
                   {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   {isLatestOwnMessage && m.status && (
@@ -311,39 +393,65 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, otherUser, onBa
         })}
       </div>
 
-      <div className="border-t border-border p-3 bg-background">
+      <div className="border-t border-white/30 bg-background/80 p-3 backdrop-blur-xl">
+        <div className="mx-auto w-full max-w-3xl">
         {composerError && (
           <FriendlyCard className="mb-3 border border-amber-500/20 bg-amber-500/10 text-sm text-amber-700 dark:text-amber-300">
             {composerError}
           </FriendlyCard>
         )}
-        <div className="flex items-center gap-2">
+        {selectedImagePreview && (
+          <div className="mb-3 flex items-start gap-3 rounded-[24px] border border-white/35 bg-background/75 p-3 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.7)] backdrop-blur">
+            <img src={selectedImagePreview} alt="Selected attachment" className="h-20 w-20 rounded-2xl object-cover ring-1 ring-white/30" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Image ready to send</p>
+              <p className="text-xs text-muted-foreground">This photo will be uploaded and delivered with your message.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => clearSelectedImage()}
+              className="rounded-full border border-border/70 bg-background/80 p-2 transition-colors hover:bg-muted"
+              aria-label="Remove image"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        <div className="flex items-center gap-2 rounded-[26px] border border-white/40 bg-background/75 p-2 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.7)] backdrop-blur">
           <button
             type="button"
-            className="p-2 rounded-xl border border-border bg-muted text-muted-foreground opacity-60 cursor-not-allowed"
-            title="Image sending coming next"
-            aria-label="Attach image (disabled)"
-            disabled
+            onClick={() => fileInputRef.current?.click()}
+            className="rounded-2xl border border-border/70 bg-background/80 p-2 text-muted-foreground transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted"
+            title="Attach image"
+            aria-label="Attach image"
           >
             <ImageIcon size={18} />
           </button>
           <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageChange}
+          />
+          <input
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-            placeholder={canMessage ? 'Message...' : 'Follow each other to send messages'}
+            placeholder={canMessage ? (selectedImage ? 'Add a caption (optional)...' : 'Message...') : 'Follow each other to send messages'}
             disabled={!canMessage}
-            className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm outline-none focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex-1 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm outline-none transition-colors focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="button"
             onClick={sendMessage}
-            disabled={!canMessage || !text.trim() || sending}
-            className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold disabled:opacity-50 transition-all active:scale-95 inline-flex items-center gap-2"
+            disabled={!canMessage || (!text.trim() && !selectedImage) || sending}
+            className="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 font-semibold text-primary-foreground shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)] transition-all duration-300 active:scale-95 disabled:opacity-50"
           >
-            <Send size={18} />
-            Send
+            {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            {sending ? 'Sending' : 'Send'}
           </button>
+        </div>
         </div>
       </div>
     </div>

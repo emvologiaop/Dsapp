@@ -9,6 +9,9 @@ import {
   isValidUrl,
   sanitizeFilename,
   sanitizeSearchQuery,
+  getSignupValidationErrors,
+  normalizeSignupInput,
+  validateAvatarFile,
 } from '../src/utils/validation';
 
 describe('Input Validation and Sanitization', () => {
@@ -68,6 +71,7 @@ describe('Input Validation and Sanitization', () => {
       expect(isValidUsername('user name')).toBe(false);
       expect(isValidUsername('user!name')).toBe(false);
       expect(isValidUsername('user-name')).toBe(false);
+      expect(isValidUsername('UserName')).toBe(false);
     });
   });
 
@@ -178,6 +182,84 @@ describe('Input Validation and Sanitization', () => {
 
     it('should handle empty strings', () => {
       expect(sanitizeSearchQuery('')).toBe('');
+    });
+  });
+
+  describe('normalizeSignupInput', () => {
+    it('normalizes email, username, and whitespace', () => {
+      expect(
+        normalizeSignupInput({
+          name: '  Test   User ',
+          username: ' Test_User ',
+          email: ' USER@Example.com ',
+          department: '  Software   Engineering ',
+          year: ' 2 ',
+        })
+      ).toMatchObject({
+        name: 'Test User',
+        username: 'test_user',
+        email: 'user@example.com',
+        department: 'Software Engineering',
+        year: '2',
+      });
+    });
+  });
+
+  describe('getSignupValidationErrors', () => {
+    it('returns no errors for a valid signup payload', () => {
+      expect(
+        getSignupValidationErrors({
+          name: 'Test User',
+          username: 'test_user',
+          email: 'user@example.com',
+          password: 'Password123',
+          confirmPassword: 'Password123',
+          department: 'Software Engineering',
+          year: '3',
+        })
+      ).toEqual([]);
+    });
+
+    it('reports invalid signup fields', () => {
+      expect(
+        getSignupValidationErrors({
+          name: 'A',
+          username: 'Bad Username',
+          email: 'invalid',
+          password: 'weak',
+          confirmPassword: '',
+          department: 'X',
+          year: '9',
+        })
+      ).toEqual(
+        expect.arrayContaining([
+          'Full name must be at least 2 characters.',
+          'Username must be 3-20 lowercase letters, numbers, underscores, or periods.',
+          'Enter a valid email address.',
+          'Password must be at least 8 characters and include uppercase, lowercase, and a number.',
+          'Please confirm your password.',
+          'Department must be at least 2 characters.',
+          'Select a valid academic year.',
+        ])
+      );
+    });
+  });
+
+  describe('validateAvatarFile', () => {
+    it('accepts supported avatars within the size limit', () => {
+      expect(validateAvatarFile({ type: 'image/png', size: 1024 })).toBeNull();
+    });
+
+    it('rejects unsupported avatar file types', () => {
+      expect(validateAvatarFile({ type: 'application/pdf', size: 1024 })).toBe(
+        'Avatar must be a JPG, PNG, WebP, or GIF image.'
+      );
+    });
+
+    it('rejects avatars that are too large', () => {
+      expect(validateAvatarFile({ type: 'image/jpeg', size: 6 * 1024 * 1024 })).toBe(
+        'Avatar must be 5MB or smaller.'
+      );
     });
   });
 });

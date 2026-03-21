@@ -27,8 +27,8 @@ const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || 'En
   .filter(Boolean);
 const ADMIN_TELEGRAM_USERNAME = process.env.ADMIN_TELEGRAM_USERNAME || '@dev_envologia';
 const ADMIN_TELEGRAM_USER_ID = process.env.ADMIN_TELEGRAM_USER_ID || '6882100039';
-const USER_CACHE_TTL_MS = 30_000;
-const RESPONSE_CACHE_TTL_MS = 12_000;
+const USER_CACHE_TTL_MS = 5 * 60_000;
+const RESPONSE_CACHE_TTL_MS = 60_000;
 const telegramUserCache = new Map<string, { user: any; expiresAt: number }>();
 const botResponseCache = new Map<string, { value: any; expiresAt: number }>();
 
@@ -70,6 +70,14 @@ async function getCachedResponse<T>(key: string, builder: () => Promise<T>, ttlM
   const value = await builder();
   botResponseCache.set(key, { value, expiresAt: now + ttlMs });
   return value;
+}
+
+async function sendBotChatAction(bot: TelegramBot, chatId: number, action: 'typing' | 'upload_photo' = 'typing') {
+  try {
+    await bot.sendChatAction(chatId, action);
+  } catch {
+    // ignore transient Telegram action failures
+  }
 }
 
 // Helper function to format date
@@ -291,6 +299,7 @@ export function initBot(io?: any) {
 
   async function handleStats(chatId: number) {
     try {
+      await sendBotChatAction(bot, chatId);
       const user = await getUserFromTelegram(chatId);
       if (!user) {
         bot.sendMessage(
@@ -313,7 +322,7 @@ export function initBot(io?: any) {
             },
           },
         ])
-      ));
+      ), 90_000);
       const postsCount = stats?.posts || 0;
       const totalLikes = stats?.totalLikes || 0;
       const totalComments = stats?.totalComments || 0;
@@ -362,6 +371,7 @@ export function initBot(io?: any) {
 
   async function handleUnread(chatId: number) {
     try {
+      await sendBotChatAction(bot, chatId);
       const user = await getUserFromTelegram(chatId);
       if (!user) {
         bot.sendMessage(
@@ -381,7 +391,7 @@ export function initBot(io?: any) {
           .limit(10)
           .populate('senderId', 'name username')
           .lean()
-      ));
+      ), 45_000);
 
       if (unreadMessages.length === 0) {
         bot.sendMessage(
@@ -424,6 +434,7 @@ export function initBot(io?: any) {
 
   async function handleProfile(chatId: number, requestedUsername?: string) {
     try {
+      await sendBotChatAction(bot, chatId);
       const currentUser = await getUserFromTelegram(chatId);
       if (!currentUser) {
         bot.sendMessage(
@@ -433,8 +444,9 @@ export function initBot(io?: any) {
         return;
       }
 
-      const targetUser = requestedUsername
-        ? await User.findOne({ username: requestedUsername }).lean()
+      const normalizedUsername = requestedUsername?.trim().toLowerCase();
+      const targetUser = normalizedUsername
+        ? await getCachedResponse(`profile:user:${normalizedUsername}`, () => User.findOne({ username: normalizedUsername }).lean(), 90_000)
         : currentUser;
 
       if (!targetUser) {
@@ -444,7 +456,7 @@ export function initBot(io?: any) {
 
       const postsCount = await getCachedResponse(`profile:posts:${targetUser._id.toString()}`, () => (
         Post.countDocuments({ userId: targetUser._id, isDeleted: false })
-      ));
+      ), 90_000);
       const isOwnProfile = targetUser._id.toString() === currentUser._id.toString();
 
       let profileText = `👤 *Profile*\n\n`;
@@ -492,6 +504,7 @@ export function initBot(io?: any) {
 
   async function handleTrending(chatId: number) {
     try {
+      await sendBotChatAction(bot, chatId);
       const user = await getUserFromTelegram(chatId);
       if (!user) {
         bot.sendMessage(
@@ -527,7 +540,7 @@ export function initBot(io?: any) {
           },
           { $unwind: '$user' }
         ])
-      ));
+      ), 120_000);
 
       if (trendingPosts.length === 0) {
         bot.sendMessage(
@@ -616,27 +629,31 @@ export function initBot(io?: any) {
 
   async function handleAds(chatId: number) {
     try {
-      const now = new Date();
-      const activeAds = await Ad.find({
-        isActive: true,
-        $and: [
-          {
-            $or: [
-              { startDate: { $exists: false } },
-              { startDate: { $lte: now } }
-            ]
-          },
-          {
-            $or: [
-              { endDate: { $exists: false } },
-              { endDate: { $gte: now } }
-            ]
-          }
-        ]
-      })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .populate('createdBy', 'name');
+      await sendBotChatAction(bot, chatId, 'typing');
+      const activeAds = await getCachedResponse('ads:active', async () => {
+        const now = new Date();
+        return Ad.find({
+          isActive: true,
+          $and: [
+            {
+              $or: [
+                { startDate: { $exists: false } },
+                { startDate: { $lte: now } }
+              ]
+            },
+            {
+              $or: [
+                { endDate: { $exists: false } },
+                { endDate: { $gte: now } }
+              ]
+            }
+          ]
+        })
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .populate('createdBy', 'name')
+          .lean();
+      }, 120_000);
 
       if (activeAds.length === 0) {
         bot.sendMessage(
@@ -672,6 +689,7 @@ export function initBot(io?: any) {
         }
 
         if (ad.imageUrl) {
+          await sendBotChatAction(bot, chatId, 'upload_photo');
           await bot.sendPhoto(chatId, ad.imageUrl, {
             caption: message,
             parse_mode: 'Markdown',

@@ -191,7 +191,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
 
   const fetchStories = async () => {
     try {
-      const res = await fetch(`/api/stories/user/${userId}`);
+      const res = await fetch(`/api/stories/user/${userId}?currentUserId=${encodeURIComponent(currentUserId)}`);
       if (res.ok) {
         const data = await res.json();
         setStories(Array.isArray(data) ? data : []);
@@ -508,14 +508,14 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
   return (
     <div className="space-y-0">
       {/* Profile Header */}
-      <div className="px-4 py-5 bg-gradient-to-b from-primary/5 to-transparent">
-        <div className="flex items-center justify-between mb-4">
+      <div className="rounded-[30px] border border-white/30 bg-gradient-to-b from-primary/8 via-background/92 to-background/82 px-4 py-5 shadow-[0_28px_80px_-40px_rgba(15,23,42,0.72)] backdrop-blur-xl">
+        <div className="mb-4 flex items-center justify-between">
           <div>
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-background/75 px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back
@@ -526,7 +526,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/35 bg-background/75 transition-colors hover:bg-muted/80"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
@@ -544,7 +544,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 : (badgeType === 'blue' || profile.isVerified) ? 'ring-blue-500'
                 : 'ring-primary/30';
               return (
-                <div className={`w-20 h-20 md:w-24 md:h-24 rounded-full ring-2 ${borderClass} bg-muted flex items-center justify-center text-3xl font-bold overflow-hidden shadow-md`}>
+                <div className={`flex h-20 w-20 items-center justify-center overflow-hidden rounded-[30px] ring-2 ${borderClass} bg-muted text-3xl font-bold shadow-md md:h-24 md:w-24`}>
                   {profile.avatarUrl ? (
                     <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
                   ) : (
@@ -580,20 +580,20 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             </div>
 
             {/* Desktop stats */}
-            <div className="hidden md:flex items-center gap-6 mb-3">
-              <div className="flex flex-col items-center">
+            <div className="mb-3 hidden items-center gap-4 md:flex">
+              <div className="flex min-w-[76px] flex-col items-center rounded-2xl border border-white/35 bg-background/72 px-3 py-2 shadow-sm">
                 <span className="font-bold text-sm">{posts.length}</span>
                 <span className="text-xs text-muted-foreground">posts</span>
               </div>
               <div 
-                className="flex flex-col items-center cursor-pointer hover:opacity-70 transition-opacity"
+                className="flex min-w-[76px] cursor-pointer flex-col items-center rounded-2xl border border-white/35 bg-background/72 px-3 py-2 shadow-sm transition-opacity hover:opacity-70"
                 onClick={fetchFollowers}
               >
                 <span className="font-bold text-sm">{profile.followersCount || 0}</span>
                 <span className="text-xs text-muted-foreground">followers</span>
               </div>
               <div 
-                className="flex flex-col items-center cursor-pointer hover:opacity-70 transition-opacity"
+                className="flex min-w-[76px] cursor-pointer flex-col items-center rounded-2xl border border-white/35 bg-background/72 px-3 py-2 shadow-sm transition-opacity hover:opacity-70"
                 onClick={fetchFollowing}
               >
                 <span className="font-bold text-sm">{profile.followingCount || 0}</span>
@@ -607,13 +607,13 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 <>
                   <button
                     onClick={onEditProfile}
-                    className="flex-1 bg-muted hover:bg-muted/80 text-foreground px-4 py-1.5 rounded-lg text-sm font-semibold transition-all border border-border"
+                    className="flex-1 rounded-2xl border border-white/35 bg-background/78 px-4 py-2.5 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted/70"
                   >
                     Edit Profile
                   </button>
                   <button
                     onClick={onOpenSettings}
-                    className="bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-sm font-semibold transition-all border border-border"
+                    className="rounded-2xl border border-white/35 bg-background/78 px-3 py-2.5 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted/70"
                   >
                     <Settings className="w-4 h-4" />
                   </button>
@@ -631,7 +631,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                     type="button"
                     onClick={() => onMessageUser?.(profile)}
                     disabled={!profile.canMessage}
-                    className="flex items-center justify-center gap-1.5 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-sm font-semibold transition-all border border-border disabled:cursor-not-allowed disabled:opacity-60"
+                    className="flex items-center justify-center gap-1.5 rounded-2xl border border-white/35 bg-background/78 px-3 py-2.5 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:bg-muted/70 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <MessageSquare className="w-4 h-4" />
                     Message
@@ -715,7 +715,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
         </div>
 
         {/* Mobile Stats Row */}
-        <div className="md:hidden flex items-center justify-around border-t border-border mt-4 pt-4">
+        <div className="mt-4 flex items-center justify-around rounded-[24px] border border-white/30 bg-background/72 px-3 py-4 md:hidden">
           <div className="flex flex-col items-center gap-0.5">
             <span className="font-bold text-base text-foreground">{posts.length}</span>
             <span className="text-xs text-muted-foreground uppercase tracking-wide">posts</span>
@@ -740,8 +740,8 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="border-t border-border">
-        <div className="flex items-center">
+      <div className="mt-5 rounded-[26px] border border-white/30 bg-background/74 p-1.5 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-1">
           {([
             { id: 'posts', icon: Grid3x3, label: 'Posts' },
             { id: 'stories', icon: CirclePlay, label: 'Stories' },
@@ -752,10 +752,10 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
               key={id}
               onClick={() => setActiveTab(id)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold uppercase tracking-wider border-t-2 transition-colors',
+                'flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-3 text-xs font-semibold uppercase tracking-wider transition-colors',
                 activeTab === id
-                  ? 'border-foreground text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
+                  ? 'bg-primary text-primary-foreground shadow-[0_16px_32px_-22px_rgba(15,23,42,0.9)]'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
             >
               <Icon className="w-4 h-4" />
@@ -786,7 +786,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-background"
+            className="fixed inset-0 z-50 bg-background/92 backdrop-blur-2xl"
             onClick={() => setSelectedPost(null)}
           >
             <motion.div
@@ -797,9 +797,10 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
               className="flex h-full w-full flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div className="border-b border-white/30 bg-background/60 px-4 py-3 backdrop-blur-xl">
+                <div className="mx-auto flex w-full max-w-2xl items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-muted">
                     {profile.avatarUrl ? (
                       <img src={profile.avatarUrl} alt={profile.name} className="w-full h-full object-cover" />
                     ) : (
@@ -810,10 +811,11 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                 </div>
                 <button
                   onClick={() => setSelectedPost(null)}
-                  className="w-8 h-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors"
+                  className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/35 bg-background/75 transition-colors hover:bg-muted/80"
                 >
                   <X className="w-4 h-4" />
                 </button>
+                </div>
               </div>
 
               <div ref={postViewerRef} className="flex-1 overflow-y-auto px-4 py-4">
@@ -822,7 +824,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                     <div
                       key={item._id}
                       data-post-id={item._id}
-                      className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm"
+                      className="overflow-hidden rounded-3xl border border-white/35 bg-card/82 shadow-[0_26px_65px_-42px_rgba(15,23,42,0.82)]"
                     >
                       {(item.mediaUrls?.length > 0 || item.mediaUrl) && (
                         <ImageCarousel
@@ -877,8 +879,18 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
 
       {selectedStories && (
         <StoryViewer
-          stories={selectedStories}
+          groups={[{
+            user: {
+              _id: profile?.id || profile?._id || userId,
+              name: profile?.name || profile?.username || 'User',
+              username: profile?.username || 'user',
+              avatarUrl: profile?.avatarUrl || '',
+            },
+            stories: selectedStories,
+            hasViewed: false,
+          }]}
           currentUserId={currentUserId}
+          initialGroupUserId={profile?.id || profile?._id || userId}
           onClose={() => setSelectedStories(null)}
         />
       )}
@@ -890,7 +902,7 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
             onClick={() => {
               setShowFollowersModal(false);
               setShowFollowingModal(false);
@@ -901,17 +913,17 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="bg-background rounded-2xl overflow-hidden w-full max-w-sm max-h-[70vh] flex flex-col shadow-2xl"
+              className="flex max-h-[70vh] w-full max-w-sm flex-col overflow-hidden rounded-[28px] border border-white/30 bg-background/88 shadow-[0_28px_80px_-34px_rgba(15,23,42,0.85)] backdrop-blur-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center justify-between border-b border-white/30 p-4">
                 <h3 className="font-bold text-lg">{showFollowersModal ? 'Followers' : 'Following'}</h3>
                 <button
                   onClick={() => {
                     setShowFollowersModal(false);
                     setShowFollowingModal(false);
                   }}
-                  className="w-8 h-8 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors"
+                  className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/35 bg-background/75 transition-colors hover:bg-muted/80"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -924,13 +936,13 @@ export const InstagramProfile: React.FC<InstagramProfileProps> = ({
                   </div>
                 ) : followData.length > 0 ? (
                   followData.map((user) => (
-                    <div key={user._id} className="flex items-center justify-between">
+                    <div key={user._id} className="flex items-center justify-between rounded-2xl border border-white/30 bg-background/75 px-3 py-3 shadow-sm">
                       <button
                         type="button"
                         onClick={() => onViewProfile?.(user._id)}
                         className="flex items-center gap-3 text-left"
                       >
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-muted">
                           {user.avatarUrl ? (
                             <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
                           ) : (

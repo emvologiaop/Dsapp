@@ -18,16 +18,16 @@ describe('mobile overlay layouts', () => {
       />
     );
 
-    expect(html).toContain('fixed inset-0 bg-background z-50 flex flex-col');
-    expect(html).toContain('md:max-h-[75vh]');
+    expect(html).toContain('fixed inset-0 z-50 flex flex-col bg-background/95');
+    expect(html).toContain('md:max-h-[78vh]');
   });
 
   it('renders the search panel full-screen on mobile while keeping the desktop card layout', () => {
     const html = renderToStaticMarkup(<SearchPanel onClose={() => {}} />);
 
-    expect(html).toContain('fixed inset-0 z-50 bg-background flex flex-col');
-    expect(html).toContain('rounded-none border-0 p-4 shadow-none');
-    expect(html).toContain('md:max-w-2xl');
+    expect(html).toContain('fixed inset-0 z-50 flex flex-col bg-background/90');
+    expect(html).toContain('border-white/35 bg-background/78');
+    expect(html).toContain('max-w-2xl');
   });
 
   it('renders the share modal as a full-screen mobile overlay', () => {
@@ -41,8 +41,8 @@ describe('mobile overlay layouts', () => {
       />
     );
 
-    expect(html).toContain('fixed inset-0 bg-background z-50 w-full flex flex-col');
-    expect(html).toContain('md:w-[400px]');
+    expect(html).toContain('fixed inset-0 z-50 flex w-full flex-col bg-background/95');
+    expect(html).toContain('md:w-[420px]');
   });
 
   it('renders the bottom dock as a compact bottom bar instead of a centered tall container', () => {

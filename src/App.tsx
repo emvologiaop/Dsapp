@@ -4,7 +4,6 @@ import { Home, MessageSquare, Settings, Ghost, LogOut, Shield, Bell, Zap, Plus, 
 import { OnboardingFlow } from './components/Onboarding/OnboardingFlow';
 import { PostActions } from './components/PostActions';
 import { FollowButton } from './components/FollowButton';
-import { CommentsPanel } from './components/CommentsPanel';
 import { ImageCarousel } from './components/ImageCarousel';
 import { cn } from './lib/utils';
 import { Dock } from '../components/ui/dock-two';
@@ -13,7 +12,7 @@ import { NotificationBell } from './components/NotificationBell';
 import socket from './services/socket';
 import { PostOptions } from './components/PostOptions';
 import { MaintenanceScreen } from './components/MaintenanceScreen';
-import { HashtagText } from './components/HashtagText';
+import { SocialText } from './components/SocialText';
 
 import { NotificationSettings, DEFAULT_NOTIFICATION_SETTINGS, normalizeNotificationSettings } from './utils/notificationSettings';
 import { CommunitySection, COMMUNITY_GROUPS, getGroupName, normalizeContentType, getVisibleCommunityPosts } from './utils/community';
@@ -21,6 +20,7 @@ import { sortStoryGroups, StoryGroup } from './utils/stories';
 import { GHOST_MODE_MIN_ACCOUNT_AGE_DAYS, canUseGhostMode } from './utils/ghostPolicy';
 import { getTelegramHandle, getTelegramProfileUrl, getTelegramDeepLink } from './utils/telegram';
 import { getStoredDataSaverMode, setStoredDataSaverMode, shouldEnableDataSaverByDefault } from './utils/performance';
+import { withAuthHeaders } from './utils/clientAuth';
 
 const ChatRoom = lazy(() => import('./components/Chat/ChatRoom').then((m) => ({ default: m.ChatRoom })));
 const CreatePost = lazy(() => import('./components/CreatePost').then((m) => ({ default: m.CreatePost })));
@@ -32,6 +32,7 @@ const EditProfileModal = lazy(() => import('./components/EditProfileModal').then
 const SearchPanel = lazy(() => import('./components/SearchPanel').then((m) => ({ default: m.SearchPanel })));
 const StoryViewer = lazy(() => import('./components/StoryViewer').then((m) => ({ default: m.StoryViewer })));
 const StoryUpload = lazy(() => import('./components/StoryUpload').then((m) => ({ default: m.StoryUpload })));
+const CommentsPanel = lazy(() => import('./components/CommentsPanel').then((m) => ({ default: m.CommentsPanel })));
 
 function LazyScreenFallback({ label = 'Loading...' }: { label?: string }) {
   return (
@@ -75,7 +76,7 @@ export default function App() {
   const [joinedGroups, setJoinedGroups] = useState<string[]>([]);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [storyGroups, setStoryGroups] = useState<StoryGroup[]>([]);
-  const [activeStoryGroup, setActiveStoryGroup] = useState<StoryGroup | null>(null);
+  const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null);
   const [showStoryUpload, setShowStoryUpload] = useState(false);
   const [telegramAuthCode, setTelegramAuthCode] = useState('');
   const [refreshingTelegramCode, setRefreshingTelegramCode] = useState(false);
@@ -95,6 +96,14 @@ export default function App() {
   const botHandle = getTelegramHandle(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
   const botUrl = getTelegramProfileUrl(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
   const supportContactUrl = 'https://t.me/dev_envologia';
+  const dockActiveLabel =
+    activeTab === 'home'
+      ? 'Home'
+      : activeTab === 'chat'
+        ? 'Chat'
+        : activeTab === 'profile'
+          ? 'Profile'
+          : undefined;
 
   // Notification settings labels for the UI
   const notificationSettingLabels = [
@@ -134,7 +143,7 @@ export default function App() {
     try {
       const response = await fetch('/api/auth/telegram-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId: user.id }),
       });
 
@@ -220,7 +229,7 @@ export default function App() {
     try {
       const response = await fetch(`/api/users/${user.id}/telegram-notifications`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ enabled: telegramNotificationsEnabled, settings: updatedSettings })
       });
 
@@ -256,7 +265,7 @@ export default function App() {
 
       await fetch(`/api/posts/${postId}/like`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ userId: user?.id }),
       });
     } catch (error) {
@@ -281,6 +290,10 @@ export default function App() {
       try {
         const parsedUser = JSON.parse(savedUser);
         const normalized = normalizeUser(parsedUser);
+        if (!normalized.telegramChatId) {
+          localStorage.removeItem('ddu_user');
+          return;
+        }
         setUser(normalized);
         setIsOnboarded(true);
         // Load telegram notifications preference
@@ -485,6 +498,9 @@ export default function App() {
       ...userData,
       notificationSettings: normalizeNotificationSettings(userData.notificationSettings),
     });
+    if (!normalizedUser.telegramChatId) {
+      return;
+    }
     setUser(normalizedUser);
     setIsOnboarded(true);
     setTelegramNotificationsEnabled(Boolean(normalizedUser.telegramNotificationsEnabled));
@@ -523,7 +539,7 @@ export default function App() {
     try {
       const response = await fetch(`/api/users/${user.id}/telegram-notifications`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ enabled: newValue, settings: notificationSettings })
       });
 
@@ -566,7 +582,7 @@ export default function App() {
     setPosts([]);
     setChats([]);
     setStoryGroups([]);
-    setActiveStoryGroup(null);
+    setActiveStoryUserId(null);
     setProfileModalUserId(null);
     setProfileSelectedPost(null);
     setViewingProfileUserId(null);
@@ -654,6 +670,11 @@ export default function App() {
     setShowStoryUpload(true);
   };
 
+  const openPostFromSearch = (post: any) => {
+    if (!post?.userId?._id) return;
+    openProfile(post.userId._id, { selectedPost: post });
+  };
+
   const openHashtagSearch = (hashtag: string) => {
     setSearchInitialQuery(hashtag);
     setShowSearch(true);
@@ -711,15 +732,28 @@ export default function App() {
           hasViewed: false
         }, ...sortedStoryGroups]
       : sortedStoryGroups;
+  const viewableStoryGroups = storyTrayGroups.filter((group) => Array.isArray(group.stories) && group.stories.length > 0);
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-24">
+    <div className="relative min-h-screen overflow-x-hidden bg-background pb-24 text-foreground">
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute left-[-10%] top-[-8rem] h-72 w-72 rounded-full bg-primary/12 blur-3xl" />
+        <div className="absolute right-[-8%] top-32 h-80 w-80 rounded-full bg-accent/12 blur-3xl" />
+        <div className="absolute bottom-0 left-1/2 h-64 w-[30rem] -translate-x-1/2 rounded-full bg-primary/8 blur-3xl" />
+      </div>
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-40 border-b border-white/30 bg-background/70 px-6 py-4 backdrop-blur-2xl">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between rounded-[26px] border border-white/25 bg-background/55 px-4 py-3 shadow-[0_18px_50px_-30px_rgba(15,23,42,0.65)] backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold tracking-tighter text-primary">Social</h1>
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_35px_-18px_rgba(15,23,42,0.85)]">
+            <Sparkles size={18} />
+          </div>
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-muted-foreground">Digital Campus</p>
+            <h1 className="text-2xl font-bold tracking-[-0.04em] text-primary">Social</h1>
+          </div>
           {isAnonymous && (
-            <div className="flex items-center gap-1 bg-muted px-2 py-0.5 rounded-full border border-border">
+            <div className="ml-2 flex items-center gap-1 rounded-full border border-border/70 bg-background/80 px-2 py-0.5">
               <Ghost size={12} className="text-muted-foreground" />
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Ghost Mode</span>
             </div>
@@ -757,6 +791,7 @@ export default function App() {
             )}
           </button>
         </div>
+        </div>
       </header>
 
       {showNotifications && (
@@ -764,15 +799,30 @@ export default function App() {
           <NotificationPanel
             userId={user?.id}
             onClose={() => setShowNotifications(false)}
-            onNavigate={(n) => {
+            onNavigate={async (n) => {
               setShowNotifications(false);
               if (n.relatedUserId) {
                 openProfile(n.relatedUserId);
                 return;
               }
               if (n.relatedPostId) {
-                // For now: go home; a dedicated post modal will be added next
                 setActiveTab('home');
+                try {
+                  const response = await fetch(`/api/posts/${encodeURIComponent(n.relatedPostId)}?userId=${encodeURIComponent(user.id)}`);
+                  if (response.ok) {
+                    const post = await response.json();
+                    const ownerId = post?.userId?._id?.toString?.() || post?.userId?.toString?.();
+                    if (ownerId) {
+                      openProfile(ownerId, { selectedPost: post });
+                    } else {
+                      setCommentPostId(n.relatedPostId);
+                    }
+                    return;
+                  }
+                } catch (error) {
+                  console.error('Failed to open related post from notification:', error);
+                }
+                setCommentPostId(n.relatedPostId);
                 return;
               }
             }}
@@ -781,18 +831,18 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="px-6 py-6 max-w-2xl mx-auto">
+      <main className="mx-auto max-w-2xl px-6 py-6">
         {activeTab === 'home' && (
           <div className="space-y-6">
-            <FriendlyCard className="space-y-5 border border-primary/10 bg-gradient-to-br from-background via-background to-primary/10 shadow-sm">
+            <FriendlyCard className="space-y-6 border border-primary/15 bg-gradient-to-br from-background via-background to-primary/10 shadow-[0_28px_80px_-40px_rgba(15,23,42,0.65)]">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-primary">
+                <div className="space-y-4">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-primary shadow-[0_12px_30px_-24px_rgba(15,23,42,0.8)]">
                     <Sparkles size={14} />
                     Campus Hub
                   </div>
-                  <div>
-                    <h2 className="text-2xl font-bold">
+                  <div className="space-y-2">
+                    <h2 className="text-3xl font-bold tracking-[-0.04em]">
                       {homeSection === 'feed'
                         ? 'Campus feed'
                         : homeSection === 'groups'
@@ -811,10 +861,24 @@ export default function App() {
                             : 'Admins can publish official academic news, notices, and college updates here.'}
                     </p>
                   </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="rounded-2xl border border-white/40 bg-background/75 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                      <span className="block font-semibold text-foreground">{visiblePosts.length}</span>
+                      <span className="text-muted-foreground">Visible posts</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/40 bg-background/75 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                      <span className="block font-semibold text-foreground">{joinedGroups.length}</span>
+                      <span className="text-muted-foreground">Joined groups</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/40 bg-background/75 px-3 py-2 text-xs shadow-sm backdrop-blur">
+                      <span className="block font-semibold text-foreground">{storyGroups.length}</span>
+                      <span className="text-muted-foreground">Story circles</span>
+                    </div>
+                  </div>
                 </div>
                 <button
                   onClick={openCreateMenu}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-all hover:opacity-90"
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[0_24px_45px_-24px_rgba(15,23,42,0.95)] transition-all duration-300 hover:-translate-y-0.5 hover:opacity-95"
                   disabled={homeSection === 'academics' && user?.role !== 'admin'}
                 >
                   <Plus size={18} />
@@ -837,10 +901,10 @@ export default function App() {
                       setComposerNotice(null);
                     }}
                     className={cn(
-                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors',
+                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all duration-300',
                       homeSection === section.id
-                        ? 'border-primary bg-primary text-primary-foreground'
-                        : 'border-border bg-background text-muted-foreground hover:text-foreground'
+                        ? 'border-primary bg-primary text-primary-foreground shadow-[0_16px_35px_-20px_rgba(15,23,42,0.95)]'
+                        : 'border-white/40 bg-background/70 text-muted-foreground hover:-translate-y-0.5 hover:text-foreground'
                     )}
                   >
                     <section.icon size={16} />
@@ -928,6 +992,76 @@ export default function App() {
               </FriendlyCard>
             )}
 
+            {homeSection === 'feed' && (
+              <FriendlyCard className="space-y-4 overflow-hidden border border-white/35 bg-card/78">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold">Stories</h3>
+                    <p className="text-sm text-muted-foreground">Campus updates that disappear in 24 hours.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={startCreateStory}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-background/80 px-3 py-2 text-xs font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted"
+                  >
+                    <Plus size={14} />
+                    Add story
+                  </button>
+                </div>
+
+                <div className="-mx-2 flex gap-4 overflow-x-auto px-2 pb-1">
+                  {storyTrayGroups.map((group) => {
+                    const isOwnGroup = group.user._id === user?.id;
+                    const hasStories = group.stories.length > 0;
+                    const ringClass = hasStories
+                      ? group.hasViewed
+                        ? 'from-white/30 to-white/10'
+                        : 'from-primary via-accent to-primary'
+                      : 'from-white/25 to-white/10';
+
+                    return (
+                      <button
+                        key={group.user._id}
+                        type="button"
+                        onClick={() => {
+                          if (hasStories) {
+                            setActiveStoryUserId(group.user._id);
+                          } else if (isOwnGroup) {
+                            startCreateStory();
+                          }
+                        }}
+                        className="group flex w-[5.5rem] shrink-0 flex-col items-center gap-2 text-center"
+                      >
+                        <div className={cn(
+                          'relative rounded-full bg-gradient-to-br p-[3px] shadow-[0_20px_40px_-28px_rgba(15,23,42,0.95)] transition-transform duration-300 group-hover:scale-[1.03]',
+                          ringClass
+                        )}>
+                          <div className="flex h-[4.65rem] w-[4.65rem] items-center justify-center overflow-hidden rounded-full bg-background ring-2 ring-background">
+                            {group.user.avatarUrl ? (
+                              <img src={group.user.avatarUrl} alt={group.user.name} className="h-full w-full object-cover" />
+                            ) : (
+                              <span className="text-lg font-bold text-primary">{group.user.name?.[0] || 'U'}</span>
+                            )}
+                          </div>
+                          {isOwnGroup && (
+                            <div className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-lg">
+                              <Plus size={14} />
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="truncate text-sm font-semibold">{isOwnGroup ? 'Your story' : `@${group.user.username || 'user'}`}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">
+                            {hasStories ? `${group.stories.length} ${group.stories.length === 1 ? 'story' : 'stories'}` : 'Tap to add'}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </FriendlyCard>
+            )}
+
             {showCreatePost && (
               <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex flex-col">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border">
@@ -981,14 +1115,14 @@ export default function App() {
             )}
 
             {homeSection === 'feed' && suggestedUsers.length > 0 && (
-              <FriendlyCard className="space-y-4 border border-border/60 bg-card/70">
+              <FriendlyCard className="space-y-4 border border-white/35 bg-card/74">
                 <div>
                   <h3 className="text-base font-bold">Suggested for you</h3>
                   <p className="text-sm text-muted-foreground">People you may know from mutual connections.</p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   {suggestedUsers.map((suggestion) => (
-                    <div key={suggestion.id} className="flex items-center gap-3 rounded-2xl border border-border bg-background px-3 py-3">
+                    <div key={suggestion.id} className="flex items-center gap-3 rounded-[22px] border border-white/35 bg-background/78 px-3 py-3 shadow-sm">
                       <button
                         type="button"
                         onClick={() => openProfile(suggestion.id)}
@@ -1031,8 +1165,8 @@ export default function App() {
             {visiblePosts.length > 0 ? visiblePosts.map((post) => {
               const contentType = normalizeContentType(post.contentType);
               return (
-              <FriendlyCard key={post._id} className="p-0 overflow-hidden border border-border/60 shadow-sm">
-                <div className="p-4 flex items-center justify-between">
+              <FriendlyCard key={post._id} className="overflow-hidden border border-white/35 bg-background/82 p-0 shadow-[0_26px_65px_-42px_rgba(15,23,42,0.82)]">
+                <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
@@ -1040,7 +1174,7 @@ export default function App() {
                       disabled={post.isAnonymous || !post.userId?._id}
                       className="flex items-center gap-3 text-left disabled:cursor-default group"
                     >
-                      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center overflow-hidden ring-2 ring-border shrink-0">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-muted ring-1 ring-white/40">
                         {post.isAnonymous ? (
                           <Ghost size={16} className="text-muted-foreground" />
                         ) : post.userId?.avatarUrl ? (
@@ -1079,11 +1213,20 @@ export default function App() {
                     />
                   </div>
                 ) : null}
-                <div className="px-4 py-3 space-y-2">
-                  <HashtagText
+                <div className="space-y-3 px-4 py-4">
+                  <SocialText
                     text={post.content}
                     className="text-sm text-foreground leading-relaxed whitespace-pre-wrap"
                     onHashtagClick={openHashtagSearch}
+                    onMentionClick={(username) => {
+                      const match = suggestedUsers.find((suggestion) => suggestion.username?.toLowerCase() === username.toLowerCase());
+                      if (match?.id) {
+                        openProfile(match.id);
+                      } else {
+                        setSearchInitialQuery(`@${username}`);
+                        setShowSearch(true);
+                      }
+                    }}
                   />
                   <PostActions
                     postId={post._id}
@@ -1116,13 +1259,17 @@ export default function App() {
 
         {activeTab === 'chat' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">Direct Messages</h2>
+            <FriendlyCard className="border border-primary/10 bg-gradient-to-br from-background via-background to-accent/10">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">Messaging</p>
+              <h2 className="text-3xl font-bold tracking-[-0.04em]">Direct Messages</h2>
+              <p className="text-sm text-muted-foreground">Your active conversations and quick message access live here.</p>
+            </FriendlyCard>
             <div className="space-y-2">
               {chats.length > 0 ? chats.map((chat) => (
                 <FriendlyCard
                   key={chat.user.id}
                   onClick={() => setActiveChat(chat.user)}
-                  className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-all cursor-pointer"
+                  className="flex cursor-pointer items-center gap-4 border-white/35 bg-background/80 p-4 transition-all duration-300 hover:-translate-y-0.5 hover:bg-muted/40"
                 >
                   <div className="w-12 h-12 rounded-full bg-muted shrink-0 flex items-center justify-center overflow-hidden font-bold text-foreground">
                     {chat.user.avatarUrl ? (
@@ -1195,7 +1342,26 @@ export default function App() {
 
         {activeTab === 'settings' && (
           <div className="space-y-6">
-            <h2 className="text-xl font-bold">Settings</h2>
+            <FriendlyCard className="overflow-hidden border border-primary/10 bg-gradient-to-br from-background via-background to-accent/10">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+                    <Settings size={14} />
+                    Control Center
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-bold tracking-[-0.04em]">Settings</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Manage your account, privacy, Telegram alerts, and support access from one place.
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-3xl border border-white/40 bg-background/70 px-4 py-3 text-sm shadow-sm backdrop-blur">
+                  <p className="font-semibold">{user?.name || 'User'}</p>
+                  <p className="text-xs text-muted-foreground">@{user?.username || 'username'}</p>
+                </div>
+              </div>
+            </FriendlyCard>
 
             {settingsNotice && (
               <FriendlyCard
@@ -1489,13 +1655,14 @@ export default function App() {
       </main>
 
       {commentPostId && user && (
-        <CommentsPanel
-          postId={commentPostId}
-          userId={user.id}
-          isAnonymous={false}
-          onClose={() => setCommentPostId(null)}
-          onViewProfile={openProfile}
-        />
+        <Suspense fallback={<LazyScreenFallback label="Loading comments..." />}>
+          <CommentsPanel
+            postId={commentPostId}
+            userId={user.id}
+            onClose={() => setCommentPostId(null)}
+            onViewProfile={openProfile}
+          />
+        </Suspense>
       )}
 
       {showEditProfile && user && (
@@ -1520,19 +1687,22 @@ export default function App() {
             }}
             onViewProfile={openProfile}
             onStartChat={startChatWithUser}
+            onOpenPost={openPostFromSearch}
           />
         </Suspense>
       )}
 
-      {activeStoryGroup && user && (
+      {activeStoryUserId && user && viewableStoryGroups.length > 0 && (
         <Suspense fallback={<LazyScreenFallback label="Loading story..." />}>
           <StoryViewer
-            stories={activeStoryGroup.stories}
+            groups={viewableStoryGroups}
             currentUserId={user.id}
+            initialGroupUserId={activeStoryUserId}
             onClose={() => {
-              setActiveStoryGroup(null);
+              setActiveStoryUserId(null);
               fetchStories();
             }}
+            onStoriesMutated={fetchStories}
           />
         </Suspense>
       )}
@@ -1550,17 +1720,20 @@ export default function App() {
       )}
 
       {showCreateMenu && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end" onClick={() => setShowCreateMenu(false)}>
+        <div className="fixed inset-0 z-50 flex items-end bg-black/60 backdrop-blur-md" onClick={() => setShowCreateMenu(false)}>
           <div
-            className="w-full bg-background rounded-t-3xl border border-border shadow-2xl p-5 pb-8"
+            className="w-full rounded-t-[32px] border border-white/30 bg-background/92 p-5 pb-8 shadow-[0_-24px_80px_-36px_rgba(15,23,42,0.85)] backdrop-blur-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-4">
-              <p className="font-bold text-lg">Create</p>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground">Quick Actions</p>
+                <p className="text-xl font-bold tracking-[-0.04em]">Create</p>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowCreateMenu(false)}
-                className="p-2 rounded-full hover:bg-muted transition-colors"
+                className="rounded-full p-2 transition-colors hover:bg-muted"
                 aria-label="Close"
               >
                 <X size={20} />
@@ -1571,7 +1744,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={startCreatePost}
-                className="w-full rounded-2xl border border-border bg-background hover:bg-muted transition-colors px-4 py-4 text-left"
+                className="w-full rounded-[24px] border border-white/40 bg-gradient-to-br from-background to-primary/10 px-4 py-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_45px_-30px_rgba(15,23,42,0.9)]"
               >
                 <p className="font-semibold">Post</p>
                 <p className="text-xs text-muted-foreground">Share a photo or text post</p>
@@ -1579,7 +1752,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={startCreateStory}
-                className="w-full rounded-2xl border border-border bg-background hover:bg-muted transition-colors px-4 py-4 text-left"
+                className="w-full rounded-[24px] border border-white/40 bg-gradient-to-br from-background to-accent/10 px-4 py-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_45px_-30px_rgba(15,23,42,0.9)]"
               >
                 <p className="font-semibold">Story</p>
                 <p className="text-xs text-muted-foreground">Share to your story</p>
@@ -1597,6 +1770,7 @@ export default function App() {
             { icon: MessageSquare, label: 'Chat', onClick: () => (activeTab === 'chat' ? fetchChats() : setActiveTab('chat')) },
             { icon: User, label: 'Profile', onClick: openOwnProfile },
           ]}
+          activeLabel={dockActiveLabel}
           className="fixed bottom-0 left-0 right-0 z-40"
         />
       </div>

@@ -1,10 +1,19 @@
 import type { NextFunction, Response } from 'express';
 import { User } from '../models/User.js';
 import { Post } from '../models/Post.js';
+import { extractBearerToken, verifyAuthToken } from '../utils/authToken.js';
 
 type RequestWithEntities = any;
 
 function getActorId(req: RequestWithEntities): string | undefined {
+  const authHeader = req.headers?.authorization as string | undefined;
+  const token = extractBearerToken(authHeader);
+  if (token) {
+    const payload = verifyAuthToken(token);
+    if (payload?.userId) {
+      return payload.userId;
+    }
+  }
   return req.body?.userId || req.params?.userId || req.query?.userId;
 }
 
