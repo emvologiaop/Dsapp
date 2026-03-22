@@ -46,9 +46,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const httpServer = createServer(app);
 
-const allowedOrigins = process.env.APP_URL
-  ? [process.env.APP_URL]
-  : ['http://localhost:3000', 'http://localhost:5173'];
+const authBridgeOrigins = ['https://ddusocial.vercel.app', 'https://ddusocial.tech'];
+const allowedOrigins = Array.from(
+  new Set(
+    (process.env.APP_URL ? [process.env.APP_URL] : ['http://localhost:3000', 'http://localhost:5173']).concat(
+      authBridgeOrigins
+    )
+  )
+);
 
 const io = new SocketIOServer(httpServer, {
   cors: { origin: allowedOrigins },
@@ -78,6 +83,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 app.use((req, res, next) => {
   const isDev = process.env.NODE_ENV !== 'production';
   const connectSources = ["'self'", ...allowedOrigins, 'https:', 'ws:', 'wss:'];
+  const frameSources = ["'self'", ...allowedOrigins];
   const scriptSources = isDev ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] : ["'self'"];
   const policy = [
     "default-src 'self'",
@@ -86,10 +92,11 @@ app.use((req, res, next) => {
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob: https:",
     `connect-src ${connectSources.join(' ')}`,
+    `frame-src ${frameSources.join(' ')}`,
     "font-src 'self' data:",
     "object-src 'none'",
     "base-uri 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${frameSources.join(' ')}`,
     "form-action 'self'",
   ].join('; ');
   res.setHeader('Content-Security-Policy', policy);
@@ -1479,16 +1486,13 @@ app.get('/api/users/:userId/suggestions', async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(60)
       .lean();
+    const connectionIds = new Set([
+      ...user.followingIds.map((id) => id.toString()),
+      ...user.followerIds.map((id) => id.toString()),
+    ]);
     const previewIds = new Set<string>();
     candidates.forEach((candidate) => {
-      getMutualFriendIds(
-        candidate.followerIds,
-        [
-          ...user.followingIds.map((id) => id.toString()),
-          ...user.followerIds.map((id) => id.toString()),
-        ],
-        userId
-      )
+      getMutualFriendIds(candidate.followerIds, connectionIds, userId)
         .slice(0, 3)
         .forEach((id) => previewIds.add(id));
     });
