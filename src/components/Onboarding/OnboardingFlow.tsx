@@ -304,7 +304,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const years = useMemo(() => [...SIGNUP_YEAR_OPTIONS], []);
-  const avatarError = validateAvatarFile(signupAvatarFile);
+  const avatarMissingError = signupAvatarFile ? null : 'Profile photo is required to create your account.';
+  const avatarError = avatarMissingError || validateAvatarFile(signupAvatarFile);
   const passwordHint = getPasswordValidationMessage();
   const pendingTelegramHandle = getTelegramHandle(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
   const pendingTelegramBotUrl = getTelegramProfileUrl(import.meta.env.VITE_TELEGRAM_BOT_USERNAME);
@@ -327,8 +328,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
     isValidUsername(signupUsername.trim().toLowerCase()) &&
     signupDepartment.trim().length >= 2 &&
     SIGNUP_YEAR_OPTIONS.includes(signupYear as (typeof SIGNUP_YEAR_OPTIONS)[number]) &&
-    usernameStatus !== 'taken' &&
-    usernameStatus !== 'invalid';
+    usernameStatus === 'available';
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -400,7 +400,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
     }
   };
 
-  const checkUsernameAvailability = async (usernameInput?: string): Promise<boolean> => {
+  const checkUsernameAvailability = async (
+    usernameInput?: string,
+    opts: { showError?: boolean } = {}
+  ): Promise<boolean> => {
     const normalized = normalizeSignupInput({ username: usernameInput ?? signupUsername }).username;
     if (!normalized) {
       setUsernameStatus('idle');
@@ -408,6 +411,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
     }
     if (!/^[a-z0-9_.]{3,20}$/.test(normalized)) {
       setUsernameStatus('invalid');
+      if (opts.showError) {
+        setError('Use 3-20 lowercase letters, numbers, underscores, or periods.');
+      }
       return false;
     }
     setUsernameStatus('checking');
@@ -418,10 +424,16 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
       const data = await response.json().catch(() => null);
       const available = Boolean(response.ok && data?.available);
       setUsernameStatus(available ? 'available' : 'taken');
+      if (!available && opts.showError) {
+        setError('That username is already taken. Try another one.');
+      }
       return available;
     } catch {
       setUsernameStatus('idle');
-      return true;
+      if (opts.showError) {
+        setError('Unable to check username right now. Please try again.');
+      }
+      return false;
     }
   };
 
@@ -443,6 +455,13 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
     const reader = new FileReader();
     reader.onloadend = () => setSignupAvatarPreview(reader.result as string);
     reader.readAsDataURL(file);
+  };
+
+  const handleProceedToStep3 = async () => {
+    resetFeedback();
+    const usernameAvailable = await checkUsernameAvailability(undefined, { showError: true });
+    if (!usernameAvailable) return;
+    setScreen('signup-3');
   };
 
   const handleSignup = async () => {
@@ -469,9 +488,9 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
       setError(validationErrors[0]);
       return;
     }
-    const usernameAvailable = await checkUsernameAvailability(normalized.username);
+    const usernameAvailable = await checkUsernameAvailability(normalized.username, { showError: true });
     if (!usernameAvailable) {
-      setError('That username is already taken.');
+      setScreen('signup-2');
       return;
     }
     setLoading(true);
@@ -873,7 +892,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
                         }, 300);
                       }}
                       onBlur={() => void checkUsernameAvailability()}
-                      placeholder="Username  (e.g. ddu_student)"
+                      placeholder="Username (e.g. ddu_student)"
                       autoComplete="username"
                       disabled={loading}
                       hasError={usernameStatus === 'taken' || usernameStatus === 'invalid'}
@@ -922,7 +941,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
                   </select>
 
                   <PrimaryBtn
-                    onClick={() => { resetFeedback(); setScreen('signup-3'); }}
+                    onClick={handleProceedToStep3}
                     disabled={!step2CanProceed}
                     spinning={loading}
                   >
@@ -943,7 +962,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
                   <div className="text-center">
                     <h2 className="text-xl font-bold">Add a profile photo</h2>
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      Help people recognise you. This is optional.
+                      Faces beat blank circles. Add yours to keep things friendly.
                     </p>
                   </div>
                   <SignupProgress step={3} />
@@ -1008,6 +1027,8 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
                     )}
                   </div>
 
+                  {avatarError && <InlineError message={avatarError} />}
+
                   <PrimaryBtn
                     onClick={handleSignup}
                     disabled={Boolean(avatarError)}
@@ -1015,17 +1036,6 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
                   >
                     {loading ? 'Creating account\u2026' : 'Create account'}
                   </PrimaryBtn>
-
-                  {!signupAvatarPreview && (
-                    <button
-                      type="button"
-                      onClick={handleSignup}
-                      disabled={loading}
-                      className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                    >
-                      Skip for now
-                    </button>
-                  )}
                 </div>
               </motion.div>
             )}
