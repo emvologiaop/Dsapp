@@ -100,6 +100,11 @@ export default function App() {
   const fetchChatsRef = useRef<(() => void) | null>(null);
   const chatDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Compute total unread messages for badge
+  const totalUnreadMessages = useMemo(() => {
+    return chats.reduce((sum, chat) => sum + (chat.lastMessage?.unreadCount || 0), 0);
+  }, [chats]);
+
   // Computed values
   const ghostModeDisabled = !canUseGhostMode(user?.createdAt);
   const visiblePosts = (Array.isArray(posts) ? posts : []).filter(
@@ -1729,7 +1734,7 @@ export default function App() {
             { icon: Home, label: 'Home', onClick: () => (activeTab === 'home' ? (fetchPosts(), fetchStories()) : setActiveTab('home')) },
             { icon: Search, label: 'Search', onClick: () => setShowSearch(true) },
             { icon: Plus, label: 'Create', onClick: openCreateMenu },
-            { icon: MessageSquare, label: 'Chat', onClick: () => (activeTab === 'chat' ? fetchChats() : setActiveTab('chat')) },
+            { icon: MessageSquare, label: 'Chat', onClick: () => (activeTab === 'chat' ? fetchChats() : setActiveTab('chat')), badge: totalUnreadMessages },
             { icon: User, label: 'Profile', onClick: openOwnProfile },
           ]}
           activeLabel={dockActiveLabel}
