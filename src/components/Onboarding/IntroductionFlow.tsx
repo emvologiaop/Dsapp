@@ -89,53 +89,53 @@ export function IntroductionFlow({ onComplete }: IntroductionFlowProps) {
       {
         id: 'hello',
         title: 'Welcome to DDU Social',
-        description: 'A clean, fast hub built for Dire Dawa University students.',
+        description: 'Your new campus corner for quick laughs and easy catch-ups.',
         accent: 'from-primary/20 via-primary/10 to-transparent',
         icon: <Sparkles className="h-5 w-5 text-primary" />,
         points: [
-          'Instagram-inspired feed with slick cards and motion',
-          'Dark & light themes with a single toggle',
-          'Safe-by-default auth with Telegram verification',
+          'Trade memes and updates between classes.',
+          'Hype your friends with likes, stories, and reels.',
+          'Switch light/dark to match your vibe.',
         ],
       },
       {
         id: 'connect',
-        title: 'Share and connect effortlessly',
-        description: 'Stories, chats, notifications, and profiles that feel familiar.',
+        title: 'Share without trying too hard',
+        description: 'Keep it casual—no tech jargon, just people.',
         accent: 'from-emerald-300/30 via-emerald-200/20 to-transparent',
         icon: <HandHeart className="h-5 w-5 text-emerald-500" />,
         points: [
-          'Post updates, stories, and reels with smooth media previews',
-          'Smart notifications so you never miss follows or comments',
-          'Profile-first design so people can discover you quickly',
+          'Post what you want, from quick notes to reels.',
+          'Chats that feel natural, not like another group project.',
+          'Profiles that help your people spot you fast.',
         ],
       },
       {
         id: 'reliable',
-        title: 'Built to stay reliable',
-        description: 'Offline-first touches keep the app usable when campus Wi-Fi drops.',
+        title: 'Made to keep the vibes going',
+        description: 'We handle the boring stuff so you can relax.',
         accent: 'from-amber-300/30 via-amber-200/20 to-transparent',
         icon: <CloudOff className="h-5 w-5 text-amber-500" />,
         points: [
-          'Service worker caches the shell for quicker reloads',
-          'Data-saver friendly: lean requests and lazy loading',
-          'Security-first: spam checks, rate limits, and verified identities',
+          'Smart notifications for the moments you actually care about.',
+          'Kindness-first vibe with safety tools baked in.',
+          'No tech headaches—just open, scroll, and smile.',
         ],
       },
       {
         id: 'install',
-        title: 'Install the app',
-        description: 'Add DDU Social to your home screen for a full PWA experience.',
+        title: 'Keep us one tap away',
+        description: 'Add DDU Social to your home screen for instant access.',
         accent: 'from-blue-400/25 via-blue-300/20 to-transparent',
         icon: <Download className="h-5 w-5 text-blue-500" />,
         points: [
           installState === 'installed' || isStandalone
-            ? 'Installed and ready to launch like a native app.'
-            : 'Tap “Install app” below when prompted, or use your browser menu.',
+            ? 'All set—find us on your home screen anytime.'
+            : 'See an install prompt? Tap it and you’re done.',
           pwaReady
-            ? 'Offline shell cached. You can reopen even if you lose connection.'
-            : 'Preparing offline cache… keep this tab open for a moment.',
-          'On iOS: Share → “Add to Home Screen”. On Android/desktop: browser menu → “Install app”.',
+            ? 'Ready when you are, even after you close the tab.'
+            : 'Hang tight for a sec while we finish setting things up.',
+          'No prompt? Use your browser menu and tap “Add to Home Screen”.',
         ],
         footer: (
           <div className="space-y-2 rounded-lg border border-dashed border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
