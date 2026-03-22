@@ -187,12 +187,14 @@ export default function App() {
   };
 
   const verifyTelegramLink = async () => {
-    if (!telegramAuthCode) return;
+    if (!telegramAuthCode || !user?.id) return;
     setVerifyingTelegram(true);
     setTelegramStatus(null);
 
     try {
-      const response = await fetch(`/api/auth/verify-telegram/${telegramAuthCode}`);
+      const response = await fetch(
+        `/api/auth/verify-telegram/${telegramAuthCode}?userId=${encodeURIComponent(user.id)}`
+      );
       const data = await response.json();
 
       if (data?.verified && data.user) {

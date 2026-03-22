@@ -836,12 +836,28 @@ app.post('/api/auth/telegram-code', async (req, res) => {
   }
 });
 
-app.get('/api/auth/verify-telegram/:code', async (req, res) => {
+export async function handleVerifyTelegramRequest(req: any, res: any) {
   try {
     const { code } = req.params;
+    const userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
 
     // Find user with matching code
-    const user = await User.findOne({ telegramAuthCode: code });
+    let user = await User.findOne({ telegramAuthCode: code });
+
+    // Fallback: if the code was already consumed by the bot but the app still holds it,
+    // verify using the provided userId when the Telegram chat is already linked.
+    if (!user && userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const candidate = await User.findById(userId);
+      if (candidate?.telegramChatId) {
+        candidate.telegramAuthCode = undefined;
+        candidate.telegramAuthCodeExpiresAt = undefined;
+        await candidate.save();
+        return res.json({
+          verified: true,
+          user: formatAuthUser(candidate),
+        });
+      }
+    }
 
     if (!user) {
       return res.json({ verified: false, error: 'Invalid or expired code' });
@@ -870,7 +886,9 @@ app.get('/api/auth/verify-telegram/:code', async (req, res) => {
     console.error('GET /api/auth/verify-telegram error:', error);
     res.status(500).json({ error: 'Verification failed' });
   }
-});
+}
+
+app.get('/api/auth/verify-telegram/:code', handleVerifyTelegramRequest);
 
 // -- Post Routes ----------------------------------------------------------------
 
@@ -3089,7 +3107,7 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-if (!process.env.VERCEL) {
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
   httpServer.listen(PORT, () => {
     console.log(`DDU Social server running on http://localhost:${PORT}`);
   });
