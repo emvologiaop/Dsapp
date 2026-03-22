@@ -621,12 +621,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onFinish }) => {
   };
 
   const verifyPendingTelegramLink = async () => {
-    if (!pendingTelegramUser?.telegramAuthCode) return;
+    if (!pendingTelegramUser?.telegramAuthCode || !pendingTelegramUser?.id) return;
     setPendingTelegramVerifying(true);
     setPendingTelegramStatus(null);
     try {
       const response = await fetch(
-        `/api/auth/verify-telegram/${pendingTelegramUser.telegramAuthCode}`
+        `/api/auth/verify-telegram/${pendingTelegramUser.telegramAuthCode}?userId=${encodeURIComponent(
+          pendingTelegramUser.id
+        )}`
       );
       const data = await response.json().catch(() => null);
       if (data?.verified && data?.user?.telegramChatId) {
